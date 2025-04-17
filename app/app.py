@@ -5,4 +5,4 @@ app = FastAPI()
 
 @app.get("/")
 def health_check():
-    return {"status": "OK"}
+    return {"status": "OK for now"}
