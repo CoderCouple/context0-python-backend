@@ -1,0 +1,36 @@
+version: "3.9"
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app  # live reload & dev edits
+    env_file:
+      - .env
+    depends_on:
+      - db
+    environment:
+      POETRY_VIRTUALENVS_CREATE: "false"
+      PYTHONUNBUFFERED: "1"
+    restart: unless-stopped
+
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker-init-scripts:/docker-entrypoint-initdb.d:ro  # 👈 mount DDL SQLs in the container
+    restart: unless-stopped
+
+volumes:
+  pgdata:
