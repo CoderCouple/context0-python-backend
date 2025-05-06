@@ -2,5 +2,5 @@ from enum import Enum
 
 
 class WorkflowStatus(str, Enum):
-    DRAFT = "Draft"
-    PUBLISHED = "Published"
+    DRAFT = "DRAFT"
+    PUBLISHED = "PUBLISHED"

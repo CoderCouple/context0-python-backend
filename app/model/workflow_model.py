@@ -1,5 +1,4 @@
 from datetime import datetime
-from uuid import uuid4
 
 from sqlalchemy import TIMESTAMP, Boolean, Column, Enum, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import UUID
@@ -11,8 +10,8 @@ from app.db.base import Base
 class Workflow(Base):
     __tablename__ = "workflow"
 
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
-    user_id = Column(UUID(as_uuid=True), nullable=False)
+    id = Column(String, primary_key=True)
+    user_id = Column(String, nullable=False)
 
     name = Column(String(255))
     description = Column(String(1024))
@@ -27,8 +26,8 @@ class Workflow(Base):
     last_run_status = Column(String(50))
     next_run_at = Column(TIMESTAMP(timezone=True))
 
-    created_by = Column(UUID(as_uuid=True), nullable=False)
-    updated_by = Column(UUID(as_uuid=True), nullable=False)
+    created_by = Column(String, nullable=False)
+    updated_by = Column(String, nullable=False)
 
     is_deleted = Column(Boolean, default=False, nullable=False)
     created_at = Column(

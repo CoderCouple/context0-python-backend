@@ -1,3 +1,7 @@
+-- > types
+CREATE TYPE workflow_status_enum AS ENUM ('DRAFT', 'PUBLISHED');
+
+--> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "credential" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"user_id" uuid NOT NULL,
@@ -44,15 +48,15 @@ CREATE TABLE IF NOT EXISTS "execution_phase" (
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "user" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"name" varchar(256) NOT NULL,
-	"email" varchar(320) NOT NULL,
-	"password" varchar(256) NOT NULL,
-	"role" text DEFAULT 'user' NOT NULL,
-	"phone" varchar(256),
-	"email_verified" timestamp with time zone,
-	"avatar" varchar(2048) NOT NULL,
-	CONSTRAINT "user_email_unique" UNIQUE("email")
+  "id" varchar(64) PRIMARY KEY NOT NULL,
+  "name" varchar(256) NOT NULL,
+  "email" varchar(320) NOT NULL,
+  "password" varchar(256) NOT NULL,
+  "role" text DEFAULT 'user' NOT NULL,
+  "phone" varchar(256),
+  "email_verified" timestamp with time zone,
+  "avatar" varchar(2048) NOT NULL,
+  CONSTRAINT "user_email_unique" UNIQUE("email")
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "user_purchase" (
@@ -72,24 +76,24 @@ CREATE TABLE IF NOT EXISTS "user_purchase" (
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "workflow" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"user_id" uuid NOT NULL,
-	"name" varchar(255),
-	"description" varchar(1024),
-	"definition" text,
-	"execution_plan" text,
-	"cron" varchar(100),
-	"status" varchar(50) NOT NULL,
-	"credits_cost" numeric,
-	"last_run_at" timestamp with time zone,
-	"last_run_id" uuid,
-	"last_run_status" varchar(50),
-	"next_run_at" timestamp with time zone,
-	"created_by" uuid NOT NULL,
-	"updated_by" uuid NOT NULL,
-	"is_deleted" boolean DEFAULT false NOT NULL,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+  "id" varchar(64) PRIMARY KEY NOT NULL,
+  "user_id" varchar(64) NOT NULL,
+  "name" varchar(255),
+  "description" varchar(1024),
+  "definition" text,
+  "execution_plan" text,
+  "cron" varchar(100),
+  "status" workflow_status_enum NOT NULL DEFAULT 'DRAFT',
+  "credits_cost" numeric,
+  "last_run_at" timestamp with time zone,
+  "last_run_id" varchar(64),
+  "last_run_status" varchar(50),
+  "next_run_at" timestamp with time zone,
+  "created_by" varchar(64) NOT NULL,
+  "updated_by" varchar(64) NOT NULL,
+  "is_deleted" boolean DEFAULT false NOT NULL,
+  "created_at" timestamp with time zone DEFAULT now() NOT NULL,
+  "updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "workflow_execution" (
