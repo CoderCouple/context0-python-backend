@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import TIMESTAMP, Boolean, Column, Enum, Numeric, String, Text
+from sqlalchemy import JSON, TIMESTAMP, Boolean, Column, Enum, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 
 from app.common.enums import WorkflowStatus
@@ -15,7 +15,7 @@ class Workflow(Base):
 
     name = Column(String(255))
     description = Column(String(1024))
-    definition = Column(Text)
+    definition = Column(JSON)
     execution_plan = Column(Text)
     cron = Column(String(100))
     status = Column(Enum(WorkflowStatus), nullable=False)

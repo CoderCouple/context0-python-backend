@@ -12,7 +12,7 @@ class WorkflowResponse(BaseModel):
     user_id: str
     name: Optional[str] = None
     description: Optional[str] = None
-    definition: Optional[str] = None
+    definition: Optional[dict] = None
     execution_plan: Optional[str] = None
     cron: Optional[str] = None
     status: str

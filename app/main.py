@@ -7,7 +7,7 @@ from starlette.middleware.cors import CORSMiddleware
 
 from app.api.router import router as api_router
 from app.common.error.error_handlers import register_error_handlers
-from app.core.logging import setup_logging
+from app.common.logging import setup_logging
 from app.middleware.auth_middleware import AuthLoggingMiddleware
 from app.settings import settings
 from app.warning import print_boxed_auth_warning

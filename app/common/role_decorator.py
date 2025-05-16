@@ -2,7 +2,7 @@ from typing import List
 
 from fastapi import Depends, HTTPException, status
 
-from app.core.auth import UserContext, get_current_user_context
+from app.common.auth import UserContext, get_current_user_context
 
 
 def require_roles(roles: List[str]):

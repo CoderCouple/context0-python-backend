@@ -1,11 +1,11 @@
 from typing import Generic, Optional, TypeVar
 
-from pydantic.generics import GenericModel
+from pydantic import BaseModel
 
 T = TypeVar("T")
 
 
-class BaseResponse(GenericModel, Generic[T]):
+class BaseResponse(BaseModel, Generic[T]):
     result: Optional[T] = None
     status_code: int
     message: Optional[str] = None
@@ -18,7 +18,7 @@ def success_response(
     return BaseResponse(
         result=result,
         status_code=status_code,
-        message=message or "Success",  # 🛠 guarantee non-empty
+        message=message or "Success",
         success=True,
     )
 
@@ -29,6 +29,6 @@ def error_response(
     return BaseResponse(
         result=None,
         status_code=status_code,
-        message=message or "Something went wrong",  # 🛠 guarantee non-empty
+        message=message or "Something went wrong",
         success=False,
     )

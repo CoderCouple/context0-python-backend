@@ -9,10 +9,11 @@ from app.api.tags import Tags
 from app.api.v1.request.workflow_request import (
     CreateWorkflowRequest,
     DeleteWorkflowRequest,
+    UpdateWorkflowRequest,
 )
 from app.api.v1.response.workflow_response import WorkflowListResponse, WorkflowResponse
-from app.core.auth import UserContext
-from app.core.role_decorator import require_roles
+from app.common.auth import UserContext
+from app.common.role_decorator import require_roles
 from app.db.session import get_db
 from app.service.workflow_service import WorkflowService
 
@@ -48,6 +49,16 @@ def create_workflow(
 ):
     workflow = WorkflowService(db, context).create_workflow(body)
     return success_response(workflow, "Workflow created successfully", 200)
+
+
+@router.put("/workflow", response_model=BaseResponse[WorkflowResponse])
+def update_workflow(
+    body: UpdateWorkflowRequest,
+    db: Session = Depends(get_db),
+    context: UserContext = Depends(require_roles(["admin", "builder"])),
+):
+    workflow = WorkflowService(db, context).update_workflow(body)
+    return success_response(workflow, "Workflow updated successfully", 200)
 
 
 @router.delete("/workflow", response_model=BaseResponse[WorkflowResponse])

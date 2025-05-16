@@ -14,9 +14,10 @@ class CreateWorkflowRequest(BaseModel):
 
 
 class UpdateWorkflowRequest(BaseModel):
+    workflow_id: str
     name: Optional[Annotated[str, Field(max_length=255)]] = None
     description: Optional[Annotated[str, Field(max_length=1024)]] = None
-    definition: Optional[str] = None
+    definition: Optional[dict] = None
     execution_plan: Optional[str] = None
     cron: Optional[Annotated[str, Field(max_length=100)]] = None
     status: Optional[Annotated[str, Field(max_length=50)]] = None
