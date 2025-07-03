@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     db_name: str
     auth_disabled: bool = False
     cors_origins: list[str] = ["http://localhost:3000"]
+    clerk_webhook_signing_secret: str
 
     @property
     def database_url(self) -> str:
@@ -20,6 +21,8 @@ class Settings(BaseSettings):
 
     class Config:
         env_file = Path(__file__).resolve().parent.parent / ".env"
+        env_file_encoding = "utf-8"
+        extra = "ignore"
 
 
 settings = Settings()

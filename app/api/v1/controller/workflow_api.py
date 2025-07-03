@@ -19,7 +19,7 @@ from app.service.workflow_service import WorkflowService
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=[Tags.workflow])
+router = APIRouter(tags=[Tags.Workflow])
 
 
 @router.get("/workflow", response_model=BaseResponse[WorkflowListResponse])

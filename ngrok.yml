@@ -1,0 +1,14 @@
+# ~/.ngrok/ngrok.yml
+
+version: 2
+authtoken: 2xpt1cMOFHgs99QAFyiYbmFhMoT_yyJ3ebnMBB7tHfDoHUgK  # Replace with your real token
+region: us  # Choose from: us, eu, ap, au, sa, jp, in
+
+tunnels:
+  api-server:
+    proto: http
+    addr: 8000
+    inspect: true
+    schemes:
+      - https
+    metadata: "api-server"

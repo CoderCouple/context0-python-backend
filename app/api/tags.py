@@ -2,6 +2,21 @@ from enum import Enum
 
 
 class Tags(Enum):
-    ping = "Ping"
-    workflow = "Workflow"
-    auth = "Auth"
+    # Health Check
+    Ping = "Ping"
+
+    # Memory
+    Memory = "Memory"
+
+    # Workflow
+    Workflow = "Workflow"
+    Workflow_Execution = "Workflow_Execution"
+
+    # Auth
+    Auth = "Auth"
+    Webhook = "Webhook"
+
+    # Common
+    Permission = "Permission"
+    Analytics = "Analytics"
+    Credential = "Credential"

@@ -1,37 +1,79 @@
 -- > types
 CREATE TYPE workflow_status_enum AS ENUM ('DRAFT', 'PUBLISHED');
+CREATE TYPE execution_trigger_enum AS ENUM ('MANUAL', 'CRON', 'API');
+CREATE TYPE execution_status_enum AS ENUM ('PENDING', 'RUNNING', 'COMPLETED', 'FAILED');
+CREATE TYPE execution_phase_status_enum AS ENUM (
+  'CREATED',
+  'PENDING',
+  'RUNNING',
+  'COMPLETED',
+  'FAILED'
+);
+CREATE TYPE node_status_enum AS ENUM (
+  'PENDING', 'QUEUED', 'RUNNING', 'SUCCESS', 'FAILED', 'SKIPPED'
+);
+CREATE TYPE user_role_enum AS ENUM ('USER', 'ADMIN', 'MEMBER');
+
+CREATE TABLE IF NOT EXISTS "workflow_nodes" (
+	"id"                 TEXT PRIMARY KEY DEFAULT 'node_' || gen_random_uuid() NOT NULL,
+	"name"               VARCHAR(255),
+	"type"               VARCHAR(100) NOT NULL,  -- e.g. 'fill_input', 'click', 'llm_tool_use'
+	"retries"            INTEGER DEFAULT 0,
+	"timeout_seconds"    INTEGER DEFAULT 30,
+	"error_message"      TEXT,
+	"created_by"         TEXT NOT NULL,
+	"updated_by"         TEXT NOT NULL,
+	"is_deleted"         BOOLEAN DEFAULT FALSE NOT NULL,
+	"created_at"         TIMESTAMPTZ DEFAULT now() NOT NULL,
+	"updated_at"         TIMESTAMPTZ DEFAULT now() NOT NULL
+);
+
+
+CREATE TABLE IF NOT EXISTS "workflow_node_props" (
+	"id"             TEXT PRIMARY KEY DEFAULT 'nprop_' || gen_random_uuid() NOT NULL,
+	"node_id"        TEXT NOT NULL REFERENCES "workflow_nodes" ("id") ON DELETE CASCADE,
+	"key"            VARCHAR(100) NOT NULL,
+	"value"          TEXT NOT NULL,
+	"group"          TEXT NOT NULL,-- input, output, readonly etc
+	"type"           VARCHAR(50) NOT NULL,  -- e.g. 'string', 'number', 'boolean', 'json', etc.
+	"created_by"     TEXT NOT NULL,
+	"updated_by"     TEXT NOT NULL,
+	"created_at"     TIMESTAMPTZ DEFAULT now() NOT NULL,
+	"updated_at"     TIMESTAMPTZ DEFAULT now() NOT NULL
+);
+
 
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "credential" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"user_id" uuid NOT NULL,
+	"id" text PRIMARY KEY DEFAULT 'cred_' || gen_random_uuid() NOT NULL,
+	"user_id" text NOT NULL,
 	"name" varchar(255) NOT NULL,
 	"value" varchar(2048) NOT NULL,
-	"created_by" uuid NOT NULL,
-	"updated_by" uuid NOT NULL,
+	"created_by" text NOT NULL,
+	"updated_by" text NOT NULL,
 	"is_deleted" boolean DEFAULT false NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "execution_log" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"execution_phase_id" uuid NOT NULL,
+	"id" text PRIMARY KEY DEFAULT 'execlog_' || gen_random_uuid() NOT NULL,
+	"execution_phase_id" text NOT NULL,
 	"log_level" varchar(20) NOT NULL,
 	"message" varchar(2048) NOT NULL,
 	"timestamp" timestamp with time zone NOT NULL,
-	"created_by" uuid NOT NULL,
-	"updated_by" uuid NOT NULL,
+	"created_by" text NOT NULL,
+	"updated_by" text NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"is_deleted" boolean DEFAULT false NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "execution_phase" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"user_id" uuid NOT NULL,
-	"workflow_execution_id" uuid NOT NULL,
-	"status" varchar(50) NOT NULL,
+	"id" text PRIMARY KEY DEFAULT 'phase_' || gen_random_uuid() NOT NULL,
+	"user_id" text NOT NULL,
+	"workflow_execution_id" text NOT NULL,
+	"status" execution_phase_status_enum NOT NULL DEFAULT 'CREATED',
 	"number" integer NOT NULL,
 	"node" varchar(255),
 	"name" varchar(255),
@@ -40,24 +82,34 @@ CREATE TABLE IF NOT EXISTS "execution_phase" (
 	"inputs" text,
 	"outputs" text,
 	"credits_consumed" numeric,
-	"created_by" uuid NOT NULL,
-	"updated_by" uuid NOT NULL,
+	"created_by" text NOT NULL,
+	"updated_by" text NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"is_deleted" boolean DEFAULT false NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "user" (
-  "id" varchar(64) PRIMARY KEY NOT NULL,
+  "id" text PRIMARY KEY DEFAULT 'user_' || gen_random_uuid() NOT NULL,
+  "clerk_user_id" varchar(64) UNIQUE NOT NULL,
   "name" varchar(256) NOT NULL,
-  "email" varchar(320) NOT NULL,
+  "email" varchar(320) UNIQUE NOT NULL,
   "password" varchar(256) NOT NULL,
-  "role" text DEFAULT 'user' NOT NULL,
+  "role" user_role_enum NOT NULL DEFAULT 'USER',
   "phone" varchar(256),
-  "email_verified" timestamp with time zone,
+  "email_verified" timestamp,
   "avatar" varchar(2048) NOT NULL,
-  CONSTRAINT "user_email_unique" UNIQUE("email")
+  -- "organization_id" varchar(64) REFERENCES "organization"("id") ON DELETE SET NULL,
+  -- "clerk_organization_id" varchar(64),
+  "is_deleted" boolean DEFAULT false NOT NULL,
+  "created_at" timestamp DEFAULT now() NOT NULL,
+  "updated_at" timestamp DEFAULT now() NOT NULL
 );
+INSERT INTO public."user" (id,"name",email,"password","role",phone,email_verified,avatar) VALUES
+	 ('f47ac10b-58cc-4372-a567-0e02b2c3d479','Alice Doe','alice@example.com','hashed_password','admin','+1234567890',NULL,'https://example.com/avatar.png');
+
+
+
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "user_purchase" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
@@ -76,7 +128,7 @@ CREATE TABLE IF NOT EXISTS "user_purchase" (
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "workflow" (
-  "id" varchar(64) PRIMARY KEY NOT NULL,
+  "id" text PRIMARY KEY DEFAULT 'workflow_' || gen_random_uuid() NOT NULL,
   "user_id" varchar(64) NOT NULL,
   "name" varchar(255),
   "description" varchar(1024),
@@ -89,25 +141,25 @@ CREATE TABLE IF NOT EXISTS "workflow" (
   "last_run_id" varchar(64),
   "last_run_status" varchar(50),
   "next_run_at" timestamp with time zone,
-  "created_by" varchar(64) NOT NULL,
-  "updated_by" varchar(64) NOT NULL,
+  "created_by" text NOT NULL,
+  "updated_by" text NOT NULL,
   "is_deleted" boolean DEFAULT false NOT NULL,
   "created_at" timestamp with time zone DEFAULT now() NOT NULL,
   "updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "workflow_execution" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"workflow_id" uuid NOT NULL,
-	"user_id" uuid NOT NULL,
-	"trigger" varchar(255),
-	"status" varchar(50),
+	"id" text PRIMARY KEY DEFAULT 'execution_' || gen_random_uuid() NOT NULL,
+	"workflow_id" text NOT NULL,
+	"user_id" text NOT NULL,
+	"trigger" execution_trigger_enum DEFAULT 'MANUAL' NOT NULL,
+    "status" execution_status_enum DEFAULT 'PENDING' NOT NULL,
 	"credits_consumed" numeric,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"started_at" timestamp with time zone,
 	"completed_at" timestamp with time zone,
-	"created_by" uuid NOT NULL,
-	"updated_by" uuid NOT NULL,
+	"created_by" text NOT NULL,
+	"updated_by" text NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"is_deleted" boolean DEFAULT false NOT NULL
 );

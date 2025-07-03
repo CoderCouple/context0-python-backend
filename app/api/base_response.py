@@ -24,7 +24,7 @@ def success_response(
 
 
 def error_response(
-    message: str = "Something went wrong", status_code: int = 400
+    message: str = "Something went wrong", status_code: int = 500
 ) -> BaseResponse[None]:
     return BaseResponse(
         result=None,

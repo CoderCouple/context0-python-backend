@@ -4,7 +4,7 @@ from typing import Annotated, List, Optional
 
 from pydantic import UUID4, BaseModel, Field, RootModel
 
-from app.model.workflow_model import Workflow
+from app.model.workflow.workflow_model import Workflow
 
 
 class WorkflowResponse(BaseModel):

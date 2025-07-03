@@ -39,7 +39,7 @@ def register_error_handlers(app: FastAPI):
             content=BaseResponse(
                 result=None,
                 status_code=HTTP_422_UNPROCESSABLE_ENTITY,
-                message="Request validation failed",
+                message="Request json_validation failed",
                 success=False,
             ).model_dump(),
         )

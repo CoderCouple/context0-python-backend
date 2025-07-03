@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime
 
 from sqlalchemy import JSON, TIMESTAMP, Boolean, Column, Enum, Numeric, String, Text
@@ -7,10 +8,16 @@ from app.common.enums import WorkflowStatus
 from app.db.base import Base
 
 
+def generate_prefixed_uuid():
+    return f"workflow_{uuid.uuid4()}"
+
+
 class Workflow(Base):
     __tablename__ = "workflow"
 
-    id = Column(String, primary_key=True)
+    id = Column(
+        String(), primary_key=True, default=generate_prefixed_uuid, nullable=False
+    )  # format: workflow_<uuid>
     user_id = Column(String, nullable=False)
 
     name = Column(String(255))

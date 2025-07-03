@@ -1,0 +1,26 @@
+version: v1.0
+
+vector_store:
+  provider: in_memory
+  persistence: memory
+  config: {}
+
+graph_store:
+  provider: in_memory
+  persistence: memory
+  config: {}
+
+event_store:
+  provider: sqlite
+  persistence: memory
+  config: {}
+
+time_series_store:
+  provider: in_memory
+  persistence: memory
+  config: {}
+
+prompt:
+  fact_extraction: null
+  memory_update: null
+  procedural_memory: null

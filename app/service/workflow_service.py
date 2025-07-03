@@ -13,19 +13,24 @@ from app.api.v1.request.workflow_request import (
 from app.api.v1.response.workflow_response import WorkflowListResponse, WorkflowResponse
 from app.common.auth import UserContext
 from app.common.enums import WorkflowStatus
-from app.common.validation.workflow_definition_schema import workflow_definition_schema
-from app.model.workflow_model import Workflow
+from app.common.json_validation.workflow_definition_schema import (
+    workflow_definition_schema,
+)
+from app.db.repository.workflow_repository import WorkflowRepository
+from app.engine.parsing.workflow_parser import WorkflowParser
+from app.model.workflow.workflow_model import Workflow
 
 
 class WorkflowService:
     def __init__(self, db: Session, context: UserContext):
         self.db = db
         self.context = context
+        self.repo = WorkflowRepository(db)
 
     def fetch_workflow_by_id(self, workflow_id: str) -> WorkflowResponse:
         workflow = (
             self.db.query(Workflow)
-            .filter(Workflow.id == workflow_id, not Workflow.is_deleted)
+            .filter(Workflow.id == workflow_id, Workflow.is_deleted == False)
             .first()
         )
 
@@ -43,7 +48,7 @@ class WorkflowService:
             self.db.query(Workflow)
             .filter(
                 Workflow.user_id == self.context.user_id,
-                not Workflow.is_deleted,
+                Workflow.is_deleted == False,
             )
             .all()
         )
@@ -98,20 +103,16 @@ class WorkflowService:
         return WorkflowResponse.from_orm(workflow)
 
     def update_workflow(self, body: UpdateWorkflowRequest) -> WorkflowResponse:
-        workflow = (
-            self.db.query(Workflow)
-            .filter(Workflow.id == body.workflow_id, not Workflow.is_deleted)
-            .first()
-        )
-
+        workflow = self.repo.get_by_id(body.workflow_id)
         if not workflow:
             raise HTTPException(status_code=404, detail="Workflow not found")
 
-        if not workflow.status == WorkflowStatus.DRAFT:
+        if workflow.status != WorkflowStatus.DRAFT:
             raise HTTPException(
                 status_code=409, detail="Workflow is already published!"
             )
 
+        # 1. Validate definition schema
         if body.definition is not None:
             try:
                 validate(instance=body.definition, schema=workflow_definition_schema)
@@ -119,6 +120,15 @@ class WorkflowService:
                 raise HTTPException(
                     status_code=400, detail=f"Invalid workflow definition: {e.message}"
                 )
+
+            # 2. Validate DAG structure
+            try:
+                WorkflowParser(body.definition).validate()
+            except ValueError as ve:
+                raise HTTPException(
+                    status_code=400, detail=f"Workflow structure invalid: {str(ve)}"
+                )
+
             workflow.definition = body.definition
 
         # Optional org-level check
@@ -148,4 +158,5 @@ class WorkflowService:
         self.db.commit()
         self.db.refresh(workflow)
 
-        return WorkflowResponse.from_orm(workflow)
+        updated = self.repo.update(workflow)
+        return WorkflowResponse.from_orm(updated)
