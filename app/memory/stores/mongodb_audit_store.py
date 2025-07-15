@@ -536,6 +536,14 @@ class MongoAuditStore(AuditStore):
         docs = await cursor.to_list(length=limit)
         return [self._dict_to_audit_entry(doc) for doc in docs]
 
+    async def get_total_audit_count(self) -> int:
+        """Get total number of audit entries"""
+        try:
+            return await self.collection.count_documents({})
+        except Exception as e:
+            print(f"Error counting audit entries: {e}")
+            return 0
+
     async def close(self):
         """Close MongoDB connection"""
         if self.client:

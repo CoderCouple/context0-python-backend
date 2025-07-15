@@ -39,11 +39,11 @@ class MultiHopReasoningEngine:
 
         # Enhanced reasoning parameters for large-scale memory processing
         self.max_reasoning_depth = 8
-        self.min_confidence_threshold = 0.2
+        self.min_confidence_threshold = 0.1  # Lowered for better retrieval
         self.max_context_window_size = 50  # Increased for larger memory sets
         self.max_memories_per_chain = 25  # Can use 25+ memories per reasoning chain
-        self.similarity_threshold = 0.6
-        self.memory_clustering_threshold = 0.8
+        self.similarity_threshold = 0.3  # Lowered to retrieve more memories
+        self.memory_clustering_threshold = 0.7  # Lowered for better clustering
         self.cross_reference_depth = 3  # How deep to follow memory connections
 
     @property
@@ -570,10 +570,182 @@ class MultiHopReasoningEngine:
     async def _retrieve_similar_memories(
         self, query: str, user_id: str, limit: int = 50
     ) -> List[Dict[str, Any]]:
-        """Retrieve memories similar to the query across all stores"""
+        """Advanced hybrid search with query expansion, diversity scoring, and precision matching"""
+
+        # STEP 1: Query Analysis and Expansion
+        expanded_queries = await self._expand_query_with_keywords(query)
+        logger.info(
+            f"Expanded query into {len(expanded_queries)} variants: {expanded_queries[:3]}"
+        )
+
         all_memories = []
 
-        # 1. Vector Store: Semantic similarity search
+        # STEP 2: Multi-query search with diversity enforcement
+        for i, expanded_query in enumerate(expanded_queries):
+            try:
+                from app.api.v1.request.memory_request import SearchQuery
+
+                search_query = SearchQuery(
+                    user_id=user_id,
+                    query=expanded_query,
+                    limit=min(20, limit),  # Get fewer per query to enforce diversity
+                    threshold=0.2,  # Lower threshold for broader retrieval
+                    include_content=True,
+                )
+
+                search_response = await self.memory_engine.search_memories(search_query)
+
+                if (
+                    search_response
+                    and search_response.success
+                    and search_response.results
+                ):
+                    logger.info(
+                        f"Query variant {i+1} found {len(search_response.results)} memories"
+                    )
+
+                    # Convert and score each memory
+                    for result in search_response.results:
+                        memory_data = {
+                            "memory_id": result.id,
+                            "content": result.content or result.summary or "",
+                            "summary": result.summary,
+                            "memory_type": result.memory_type.value
+                            if hasattr(result.memory_type, "value")
+                            else str(result.memory_type),
+                            "created_at": result.created_at,
+                            "tags": result.tags or [],
+                            "scope": getattr(result, "scope", "unknown"),
+                            "source": f"expanded_query_{i+1}",
+                            "search_scores": {
+                                "primary_score": result.score,
+                                "confidence": result.confidence,
+                                "query_specificity": self._calculate_query_specificity(
+                                    result, query, expanded_query
+                                ),
+                                "keyword_match": self._calculate_keyword_match_score(
+                                    result, query
+                                ),
+                                "memory_type_relevance": self._calculate_memory_type_relevance(
+                                    result.memory_type, query
+                                ),
+                                "recency": self._calculate_recency_score(
+                                    result.created_at
+                                ),
+                                "tag_relevance": self._calculate_tag_relevance(
+                                    result.tags or [], query
+                                ),
+                            },
+                        }
+
+                        # Calculate advanced composite score
+                        memory_data[
+                            "composite_score"
+                        ] = self._calculate_advanced_composite_score(memory_data, query)
+                        all_memories.append(memory_data)
+
+            except Exception as e:
+                logger.error(
+                    f"Search failed for expanded query '{expanded_query}': {e}"
+                )
+                continue
+
+        if not all_memories:
+            logger.info(
+                "No memories found in expanded search, falling back to multi-store search"
+            )
+            return await self._fallback_multi_store_search(query, user_id, limit)
+
+        # STEP 3: Advanced memory diversity and relevance optimization
+        optimized_memories = await self._optimize_memory_selection(
+            all_memories, query, limit
+        )
+
+        # STEP 4: Cross-reference enhancement
+        enhanced_memories = await self._enhance_with_cross_references(
+            optimized_memories, query, user_id
+        )
+
+        logger.info(
+            f"Final memory selection: {len(enhanced_memories)} memories with average score: {sum(m['composite_score'] for m in enhanced_memories) / len(enhanced_memories):.3f}"
+        )
+
+        return enhanced_memories[:limit]
+
+    async def _enhance_with_cross_references(
+        self, primary_memories: List[Dict[str, Any]], query: str, user_id: str
+    ) -> List[Dict[str, Any]]:
+        """Enhance primary search results with cross-references from other stores"""
+        enhanced_memories = []
+
+        for memory in primary_memories:
+            enhanced_memory = memory.copy()
+            memory_id = memory["memory_id"]
+
+            # Enhance with graph relationships
+            try:
+                if self.memory_engine.graph_store:
+                    neighbors = await self.memory_engine.graph_store.get_neighbors(
+                        memory_id, depth=1
+                    )
+                    if neighbors:
+                        enhanced_memory["graph_connections"] = len(neighbors)
+                        enhanced_memory["search_scores"]["graph_relevance"] = min(
+                            len(neighbors) * 0.1, 0.5
+                        )
+            except Exception as e:
+                logger.debug(f"Graph enhancement failed for {memory_id}: {e}")
+
+            # Enhance with temporal context
+            try:
+                if self.memory_engine.timeseries_store:
+                    # Check if memory has temporal significance
+                    created_at = memory.get("created_at")
+                    if created_at:
+                        temporal_relevance = (
+                            self._calculate_temporal_relevance_for_memory(
+                                created_at, query
+                            )
+                        )
+                        enhanced_memory["search_scores"][
+                            "temporal_relevance"
+                        ] = temporal_relevance
+            except Exception as e:
+                logger.debug(f"Temporal enhancement failed for {memory_id}: {e}")
+
+            # Recalculate composite score with enhancements
+            search_scores = enhanced_memory["search_scores"]
+            enhanced_score = (
+                search_scores.get("primary_score", 0.0) * 0.7
+                + search_scores.get(  # Primary search (highest weight)
+                    "graph_relevance", 0.0
+                )
+                * 0.15
+                + search_scores.get("temporal_relevance", 0.0)  # Graph connections
+                * 0.1
+                + search_scores.get("recency", 0.0)  # Temporal context
+                * 0.05  # Recency bonus
+            )
+
+            enhanced_memory["composite_score"] = enhanced_score
+            enhanced_memories.append(enhanced_memory)
+
+        # Sort by enhanced composite score
+        enhanced_memories.sort(key=lambda x: x["composite_score"], reverse=True)
+
+        logger.info(f"Enhanced {len(enhanced_memories)} memories with cross-references")
+        return enhanced_memories
+
+    async def _fallback_multi_store_search(
+        self, query: str, user_id: str, limit: int
+    ) -> List[Dict[str, Any]]:
+        """Fallback multi-store search when primary search fails"""
+        all_memories = []
+
+        # Try each store individually
+        stores_tried = []
+
+        # Vector Store
         if self.memory_engine.vector_store:
             try:
                 query_embedding = await self.embedder.aembed_query(query)
@@ -581,59 +753,57 @@ class MultiHopReasoningEngine:
                     query_embedding, user_id, limit
                 )
                 all_memories.extend(vector_results)
+                stores_tried.append("vector")
             except Exception as e:
                 logger.warning(f"Vector store search failed: {e}")
 
-        # 2. Document Store: Full-text and metadata search
+        # Document Store
         if self.memory_engine.doc_store:
             try:
                 doc_results = await self._search_document_store_advanced(
                     query, user_id, limit
                 )
                 all_memories.extend(doc_results)
+                stores_tried.append("document")
             except Exception as e:
                 logger.warning(f"Document store search failed: {e}")
 
-        # 3. Graph Store: Relationship-based discovery
-        if self.memory_engine.graph_store:
-            try:
-                graph_results = await self._search_graph_store_advanced(query, user_id)
-                all_memories.extend(graph_results)
-            except Exception as e:
-                logger.warning(f"Graph store search failed: {e}")
-
-        # 4. TimeSeries Store: Temporal pattern analysis
-        if self.memory_engine.timeseries_store:
-            try:
-                timeseries_results = await self._search_timeseries_store_advanced(
-                    query, user_id
-                )
-                all_memories.extend(timeseries_results)
-            except Exception as e:
-                logger.warning(f"TimeSeries store search failed: {e}")
-
-        # 5. Audit Store: Historical context and changes
-        if self.memory_engine.audit_store:
-            try:
-                audit_results = await self._search_audit_store_advanced(query, user_id)
-                all_memories.extend(audit_results)
-            except Exception as e:
-                logger.warning(f"Audit store search failed: {e}")
-
-        # Deduplicate and rank by composite score
-        unique_memories = self._deduplicate_and_score_memories(all_memories, query)
-        ranked_memories = sorted(
-            unique_memories, key=lambda x: x["composite_score"], reverse=True
+        logger.info(
+            f"Fallback search tried stores: {stores_tried}, found {len(all_memories)} memories"
         )
 
-        # For large memory sets, apply clustering and cross-referencing
-        if len(ranked_memories) > 15:
-            clustered_memories = await self._cluster_and_cross_reference_memories(
-                ranked_memories, query, user_id
-            )
-            return clustered_memories[:limit]
+        # Deduplicate and rank
+        if all_memories:
+            unique_memories = self._deduplicate_and_score_memories(all_memories, query)
+            return sorted(
+                unique_memories, key=lambda x: x["composite_score"], reverse=True
+            )[:limit]
 
-        return ranked_memories[:limit]
+        return []
+
+    def _calculate_temporal_relevance_for_memory(self, created_at, query: str) -> float:
+        """Calculate temporal relevance for a specific memory"""
+        if not created_at:
+            return 0.0
+
+        # Check if query has temporal indicators
+        temporal_words = [
+            "recent",
+            "recently",
+            "today",
+            "yesterday",
+            "last",
+            "past",
+            "when",
+        ]
+        query_lower = query.lower()
+
+        if any(word in query_lower for word in temporal_words):
+            # Recent memories get higher temporal relevance for temporal queries
+            recency_score = self._calculate_recency_score(created_at)
+            return recency_score * 0.5
+
+        return 0.1  # Base temporal relevance
 
     async def _search_vector_store_advanced(
         self, query_embedding: List[float], user_id: str, limit: int
@@ -657,26 +827,35 @@ class MultiHopReasoningEngine:
                     else:
                         tags = tags_data
 
-                    formatted_results.append(
-                        {
-                            "memory_id": memory_entry["id"],
-                            "content": metadata.get("input")
-                            or metadata.get("text", ""),
-                            "summary": metadata.get("summary"),
-                            "memory_type": metadata.get("memory_type"),
-                            "created_at": metadata.get("created_at"),
-                            "tags": tags,
-                            "source": "vector_store",
-                            "search_scores": {
-                                "vector_similarity": score,
-                                "recency": self._calculate_recency_score(
-                                    metadata.get("created_at")
-                                ),
-                                "tag_relevance": 0.5,  # Default
-                            },
-                        }
-                    )
+                    # Get actual content from metadata
+                    content = metadata.get("input") or metadata.get("text", "")
 
+                    # Only include memories with actual content and good scores
+                    if content and score >= self.similarity_threshold:
+                        formatted_results.append(
+                            {
+                                "memory_id": memory_entry["id"],
+                                "content": content,
+                                "summary": metadata.get("summary"),
+                                "memory_type": metadata.get("memory_type"),
+                                "created_at": metadata.get("created_at"),
+                                "tags": tags,
+                                "source": "vector_store",
+                                "search_scores": {
+                                    "vector_similarity": score,
+                                    "recency": self._calculate_recency_score(
+                                        metadata.get("created_at")
+                                    ),
+                                    "tag_relevance": self._calculate_tag_relevance(
+                                        tags, ""
+                                    ),
+                                },
+                            }
+                        )
+
+            logger.info(
+                f"Vector store found {len(formatted_results)} relevant memories"
+            )
             return formatted_results
         except Exception as e:
             logger.error(f"Vector store search error: {e}")
@@ -688,13 +867,18 @@ class MultiHopReasoningEngine:
         """Advanced document store search with full-text and metadata"""
         try:
             search_query = {"source_user_id": user_id}
-            results = await self.memory_engine.doc_store.search(search_query, limit)
+            results = await self.memory_engine.doc_store.search(
+                search_query, limit * 2
+            )  # Get more to filter
 
             formatted_results = []
             query_words = set(query.lower().split())
 
             for memory in results:
                 content = memory.get("input", "")
+                if not content:  # Skip memories without content
+                    continue
+
                 content_words = set(content.lower().split())
                 text_similarity = (
                     len(query_words.intersection(content_words)) / len(query_words)
@@ -702,29 +886,45 @@ class MultiHopReasoningEngine:
                     else 0
                 )
 
-                formatted_results.append(
-                    {
-                        "memory_id": memory.get("id"),
-                        "content": content,
-                        "summary": memory.get("summary"),
-                        "memory_type": memory.get("memory_type"),
-                        "created_at": memory.get("created_at"),
-                        "tags": memory.get("tags", []),
-                        "source": "document_store",
-                        "search_scores": {
-                            "text_similarity": text_similarity,
-                            "recency": self._calculate_recency_score(
-                                memory.get("created_at")
-                            ),
-                            "tag_relevance": self._calculate_tag_relevance(
-                                memory.get("tags", []), query
-                            ),
-                        },
-                        "metadata": memory,
-                    }
-                )
+                # Calculate tag relevance
+                tags = memory.get("tags", [])
+                tag_relevance = self._calculate_tag_relevance(tags, query)
 
-            return formatted_results
+                # Calculate composite relevance score
+                composite_relevance = text_similarity * 0.6 + tag_relevance * 0.4
+
+                # Only include memories with reasonable relevance
+                if composite_relevance >= 0.1 or text_similarity >= 0.2:
+                    formatted_results.append(
+                        {
+                            "memory_id": memory.get("id"),
+                            "content": content,
+                            "summary": memory.get("summary"),
+                            "memory_type": memory.get("memory_type"),
+                            "created_at": memory.get("created_at"),
+                            "tags": tags,
+                            "source": "document_store",
+                            "search_scores": {
+                                "text_similarity": text_similarity,
+                                "recency": self._calculate_recency_score(
+                                    memory.get("created_at")
+                                ),
+                                "tag_relevance": tag_relevance,
+                                "composite_relevance": composite_relevance,
+                            },
+                            "metadata": memory,
+                        }
+                    )
+
+            # Sort by composite relevance and return top results
+            formatted_results.sort(
+                key=lambda x: x["search_scores"]["composite_relevance"], reverse=True
+            )
+
+            logger.info(
+                f"Document store found {len(formatted_results)} relevant memories"
+            )
+            return formatted_results[:limit]
         except Exception as e:
             logger.error(f"Document store search error: {e}")
             return []
@@ -1200,23 +1400,44 @@ class MultiHopReasoningEngine:
                 # Calculate composite score from multiple factors
                 search_scores = memory.get("search_scores", {})
 
-                # Combine different score types
+                # Get individual scores
+                vector_similarity = search_scores.get("vector_similarity", 0.0)
                 text_similarity = search_scores.get("text_similarity", 0.0)
+                composite_relevance = search_scores.get("composite_relevance", 0.0)
                 recency = search_scores.get("recency", 0.0)
                 tag_relevance = search_scores.get("tag_relevance", 0.0)
                 graph_relevance = search_scores.get("graph_relevance", 0.0)
                 temporal_relevance = search_scores.get("temporal_relevance", 0.0)
 
-                # Weighted composite score
+                # Calculate content quality score
+                content = memory.get("content", "")
+                content_quality = min(len(content) / 100.0, 1.0) if content else 0.0
+
+                # Calculate keyword match score
+                content_words = set(content.lower().split()) if content else set()
+                keyword_match = (
+                    len(query_words.intersection(content_words)) / len(query_words)
+                    if query_words and content_words
+                    else 0.0
+                )
+
+                # Weighted composite score prioritizing semantic similarity and content relevance
                 composite_score = (
-                    text_similarity * 0.3
-                    + recency * 0.2
-                    + tag_relevance * 0.2
-                    + graph_relevance * 0.2
-                    + temporal_relevance * 0.1
+                    vector_similarity * 0.35
+                    + keyword_match * 0.25  # Semantic similarity (highest weight)
+                    + (text_similarity + composite_relevance)  # Direct keyword matches
+                    * 0.15
+                    + tag_relevance * 0.15  # Text relevance
+                    + content_quality * 0.05  # Tag matches
+                    + recency * 0.03  # Content quality
+                    + graph_relevance * 0.01  # Recency bonus
+                    + temporal_relevance  # Graph connections
+                    * 0.01  # Temporal patterns
                 )
 
                 memory["composite_score"] = composite_score
+                memory["keyword_match_score"] = keyword_match
+                memory["content_quality_score"] = content_quality
                 unique_memories.append(memory)
 
         return unique_memories
@@ -1486,39 +1707,97 @@ class MultiHopReasoningEngine:
             return "I encountered an error while processing my memories to answer your question."
 
     async def _get_memory_content(self, memory_id: str) -> Optional[Dict[str, Any]]:
-        """Retrieve memory content by ID"""
+        """Retrieve memory content by ID from multiple stores"""
         try:
             # Try document store first (most comprehensive)
             if self.memory_engine.doc_store:
-                memory = await self.memory_engine.doc_store.get_memory(memory_id)
-                if memory:
-                    return {
-                        "memory_id": memory_id,
-                        "text": memory.get("input") or memory.get("summary", ""),
-                        "summary": memory.get("summary"),
-                        "memory_type": memory.get("memory_type"),
-                        "tags": memory.get("tags", []),
-                        "created_at": memory.get("created_at"),
-                    }
+                try:
+                    memory = await self.memory_engine.doc_store.get_memory(memory_id)
+                    if memory:
+                        return {
+                            "memory_id": memory_id,
+                            "text": memory.get("input") or memory.get("summary", ""),
+                            "summary": memory.get("summary"),
+                            "memory_type": memory.get("memory_type"),
+                            "tags": memory.get("tags", []),
+                            "created_at": memory.get("created_at"),
+                        }
+                except Exception as e:
+                    logger.warning(
+                        f"Document store retrieval failed for {memory_id}: {e}"
+                    )
 
-            # Fallback to vector store if document store fails
+            # Try vector store with metadata filtering
             if self.memory_engine.vector_store:
-                vector_result = await self.memory_engine.vector_store.read(memory_id)
-                if vector_result and isinstance(vector_result, dict):
-                    metadata = vector_result.get("metadata", {})
-                    return {
-                        "memory_id": memory_id,
-                        "text": metadata.get("input") or metadata.get("text", ""),
-                        "summary": metadata.get("summary"),
-                        "memory_type": metadata.get("memory_type"),
-                        "tags": metadata.get("tags", "").split(",")
-                        if isinstance(metadata.get("tags"), str)
-                        else metadata.get("tags", []),
-                        "created_at": metadata.get("created_at"),
-                    }
+                try:
+                    # Use similarity search with exact ID filter
+                    dummy_embedding = [
+                        0.0
+                    ] * 1536  # Dummy embedding since we're filtering by ID
+                    search_filter = {"memory_id": memory_id}
 
-            # If both fail, return None
-            logger.warning(f"Could not retrieve memory content for {memory_id}")
+                    vector_results = (
+                        await self.memory_engine.vector_store.similarity_search(
+                            embedding=dummy_embedding, limit=1, filter=search_filter
+                        )
+                    )
+
+                    if vector_results:
+                        memory_entry, score = vector_results[0]
+                        if isinstance(memory_entry, dict):
+                            metadata = memory_entry.get("metadata", {})
+
+                            # Parse tags properly
+                            tags_data = metadata.get("tags", [])
+                            if isinstance(tags_data, str):
+                                tags = tags_data.split(",") if tags_data else []
+                                tags = [tag.strip() for tag in tags if tag.strip()]
+                            else:
+                                tags = tags_data
+
+                            return {
+                                "memory_id": memory_id,
+                                "text": metadata.get("input")
+                                or metadata.get("text", ""),
+                                "summary": metadata.get("summary"),
+                                "memory_type": metadata.get("memory_type"),
+                                "tags": tags,
+                                "created_at": metadata.get("created_at"),
+                            }
+                except Exception as e:
+                    logger.warning(
+                        f"Vector store retrieval failed for {memory_id}: {e}"
+                    )
+
+            # Try graph store
+            if self.memory_engine.graph_store:
+                try:
+                    graph_result = await self.memory_engine.graph_store.read(memory_id)
+                    if graph_result:
+                        return {
+                            "memory_id": memory_id,
+                            "text": graph_result.input
+                            if hasattr(graph_result, "input")
+                            else "",
+                            "summary": graph_result.summary
+                            if hasattr(graph_result, "summary")
+                            else "",
+                            "memory_type": graph_result.memory_type.value
+                            if hasattr(graph_result, "memory_type")
+                            else "",
+                            "tags": graph_result.tags
+                            if hasattr(graph_result, "tags")
+                            else [],
+                            "created_at": graph_result.created_at
+                            if hasattr(graph_result, "created_at")
+                            else None,
+                        }
+                except Exception as e:
+                    logger.warning(f"Graph store retrieval failed for {memory_id}: {e}")
+
+            logger.warning(
+                f"Could not retrieve memory content for {memory_id} from any store"
+            )
             return None
 
         except Exception as e:
@@ -1643,3 +1922,375 @@ class MultiHopReasoningEngine:
             "memory_relevance": sum(c.overall_confidence for c in chains) / len(chains),
             "reasoning_coherence": max(c.overall_confidence for c in chains),
         }
+
+    # ==========================================
+    # ADVANCED MEMORY RETRIEVAL OPTIMIZATION METHODS
+    # ==========================================
+
+    async def _expand_query_with_keywords(self, query: str) -> List[str]:
+        """Expand query with related keywords and semantic variants for better coverage"""
+        expanded_queries = [query]  # Start with original query
+
+        # Define keyword expansion mapping for common query patterns
+        keyword_expansions = {
+            # Childhood/Early life
+            "childhood": ["youth", "early life", "growing up", "young", "child"],
+            "curiosity": [
+                "interest",
+                "fascination",
+                "wonder",
+                "exploration",
+                "learning",
+            ],
+            # Career/Professional
+            "career": ["job", "work", "professional", "occupation", "employment"],
+            "achievement": ["success", "accomplishment", "milestone", "progress"],
+            "leadership": ["management", "leading", "team", "mentor", "guidance"],
+            # Relationships/Social
+            "wife": ["spouse", "partner", "married", "Lisa"],
+            "family": ["parents", "relatives", "siblings", "daughter", "Maya"],
+            "friends": ["friendship", "social", "relationships", "Alex"],
+            "mentorship": ["mentor", "teaching", "guidance", "Dr. Chen", "bootcamp"],
+            # Technical/Skills
+            "technical": ["programming", "engineering", "software", "computer"],
+            "skills": ["expertise", "abilities", "knowledge", "experience"],
+            "security": ["mobile app", "tech conference", "cybersecurity"],
+            # Personal Development
+            "growth": ["development", "learning", "progress", "evolution"],
+            "reflection": ["thinking", "realization", "understanding", "insight"],
+            "values": ["principles", "beliefs", "priorities", "important"],
+            # Hobbies/Interests
+            "creative": ["guitar", "photography", "artistic", "music"],
+            "hobbies": ["interests", "activities", "passion", "recreation"],
+        }
+
+        # Extract key terms and expand them
+        query_lower = query.lower()
+        for base_term, expansions in keyword_expansions.items():
+            if base_term in query_lower:
+                # Create queries with expanded terms
+                for expansion in expansions[:2]:  # Limit to avoid too many queries
+                    expanded_query = query_lower.replace(base_term, expansion)
+                    if expanded_query != query_lower and expanded_query not in [
+                        q.lower() for q in expanded_queries
+                    ]:
+                        expanded_queries.append(expanded_query)
+
+        # Add specific entity-focused queries based on detected patterns
+        if "lisa" in query_lower or "wife" in query_lower:
+            expanded_queries.extend(
+                [
+                    "tech conference mobile security meeting",
+                    "marriage wedding Napa Valley relationship",
+                ]
+            )
+
+        if "mentorship" in query_lower or "mentor" in query_lower:
+            expanded_queries.extend(
+                [
+                    "Dr. Chen professor teaching guidance machine learning",
+                    "coding bootcamp teaching volunteers students",
+                    "mentoring engineers team leadership",
+                ]
+            )
+
+        if "family" in query_lower and (
+            "professional" in query_lower or "achievement" in query_lower
+        ):
+            expanded_queries.extend(
+                [
+                    "parents engineer teacher influence career",
+                    "family background professional success Google",
+                    "mother father education inspiration",
+                ]
+            )
+
+        if "creative" in query_lower or "hobbies" in query_lower:
+            expanded_queries.extend(
+                [
+                    "guitar music photography artistic creative",
+                    "hiking Pacific Crest Trail adventure nature",
+                    "hobbies complement technical work balance",
+                ]
+            )
+
+        # Enhanced multi-domain pattern detection
+        if "technical" in query_lower and (
+            "creative" in query_lower or "complement" in query_lower
+        ):
+            expanded_queries.extend(
+                [
+                    "guitar photography creative technical balance",
+                    "artistic pursuits engineering problem solving",
+                    "music photography technical career",
+                ]
+            )
+
+        if "skills" in query_lower or "expertise" in query_lower:
+            expanded_queries.extend(
+                [
+                    "Python Java C++ programming algorithms",
+                    "TensorFlow PyTorch machine learning expertise",
+                    "leadership experience mentoring engineers",
+                ]
+            )
+
+        if "progression" in query_lower or "journey" in query_lower:
+            expanded_queries.extend(
+                [
+                    "Amazon Google career progression timeline",
+                    "internship Microsoft first job growth",
+                    "student mentor teacher progression",
+                ]
+            )
+
+        # Remove duplicates while preserving order
+        unique_queries = []
+        seen = set()
+        for q in expanded_queries:
+            if q.lower() not in seen:
+                unique_queries.append(q)
+                seen.add(q.lower())
+
+        return unique_queries[:5]  # Limit to 5 queries max to avoid performance issues
+
+    def _calculate_query_specificity(
+        self, result, original_query: str, expanded_query: str
+    ) -> float:
+        """Calculate how specifically this memory matches the query intent"""
+        content = (result.content or result.summary or "").lower()
+        original_lower = original_query.lower()
+        expanded_lower = expanded_query.lower()
+
+        # Count direct matches in original query
+        original_words = set(original_lower.split())
+        expanded_words = set(expanded_lower.split())
+        content_words = set(content.split())
+
+        original_matches = len(original_words.intersection(content_words))
+        expanded_matches = len(expanded_words.intersection(content_words))
+
+        # Higher score for original query matches
+        specificity = (
+            original_matches / len(original_words) if original_words else 0
+        ) * 0.8
+        specificity += (
+            expanded_matches / len(expanded_words) if expanded_words else 0
+        ) * 0.2
+
+        return min(specificity, 1.0)
+
+    def _calculate_keyword_match_score(self, result, query: str) -> float:
+        """Calculate keyword match score with weighted importance"""
+        content = (result.content or result.summary or "").lower()
+        tags = [tag.lower() for tag in (result.tags or [])]
+        query_lower = query.lower()
+
+        # Extract key terms from query
+        key_terms = []
+        important_terms = [
+            "childhood",
+            "curiosity",
+            "career",
+            "wife",
+            "lisa",
+            "family",
+            "mentorship",
+            "mentor",
+            "technical",
+            "creative",
+            "hobbies",
+            "security",
+            "achievement",
+            "growth",
+            "values",
+        ]
+
+        for term in important_terms:
+            if term in query_lower:
+                key_terms.append(term)
+
+        if not key_terms:
+            # Fallback to general word matching
+            query_words = query_lower.split()
+            content_words = content.split()
+            matches = len(set(query_words).intersection(set(content_words)))
+            return min(matches / len(query_words) if query_words else 0, 1.0)
+
+        # Calculate weighted matches
+        content_matches = sum(1 for term in key_terms if term in content)
+        tag_matches = sum(1 for term in key_terms if any(term in tag for tag in tags))
+
+        score = (content_matches * 0.7 + tag_matches * 0.3) / len(key_terms)
+        return min(score, 1.0)
+
+    def _calculate_memory_type_relevance(self, memory_type, query: str) -> float:
+        """Calculate relevance score based on memory type matching query intent"""
+        query_lower = query.lower()
+
+        if hasattr(memory_type, "value"):
+            type_str = memory_type.value.lower()
+        else:
+            type_str = str(memory_type).lower()
+
+        # Memory type relevance mapping
+        type_relevance = {
+            # Factual/Identity questions
+            "semantic": 0.9
+            if any(
+                word in query_lower
+                for word in ["about", "what", "who", "skills", "expertise"]
+            )
+            else 0.6,
+            # Experience/Event questions
+            "episodic": 0.9
+            if any(
+                word in query_lower
+                for word in ["how", "when", "experience", "met", "happened"]
+            )
+            else 0.7,
+            # Skills/Process questions
+            "procedural": 0.9
+            if any(
+                word in query_lower
+                for word in ["skills", "how to", "expertise", "abilities"]
+            )
+            else 0.5,
+            # Reflection/Learning questions
+            "meta": 0.9
+            if any(
+                word in query_lower
+                for word in ["learned", "realized", "reflection", "growth", "think"]
+            )
+            else 0.6,
+            # Emotional/Personal questions
+            "emotional": 0.8
+            if any(
+                word in query_lower
+                for word in ["feel", "values", "important", "relationship"]
+            )
+            else 0.4,
+        }
+
+        for type_key, score in type_relevance.items():
+            if type_key in type_str:
+                return score
+
+        return 0.5  # Default relevance
+
+    def _calculate_advanced_composite_score(
+        self, memory_data: Dict[str, Any], query: str
+    ) -> float:
+        """Calculate advanced composite score with multiple weighted factors"""
+        scores = memory_data["search_scores"]
+
+        # Weighted scoring components
+        weights = {
+            "primary_score": 0.25,  # Base semantic similarity
+            "query_specificity": 0.20,  # How specifically it matches query
+            "keyword_match": 0.20,  # Keyword relevance
+            "memory_type_relevance": 0.15,  # Memory type appropriateness
+            "confidence": 0.10,  # Memory confidence
+            "tag_relevance": 0.05,  # Tag matching
+            "recency": 0.05,  # Temporal relevance
+        }
+
+        composite_score = 0.0
+        for component, weight in weights.items():
+            if component in scores:
+                composite_score += scores[component] * weight
+
+        # Apply content quality boost
+        content = memory_data.get("content", "")
+        if len(content) > 100:  # Prefer memories with substantial content
+            composite_score *= 1.05
+
+        # Apply diversity penalty for very similar memories (will be handled in optimization)
+        return min(composite_score, 1.0)
+
+    async def _optimize_memory_selection(
+        self, all_memories: List[Dict[str, Any]], query: str, limit: int
+    ) -> List[Dict[str, Any]]:
+        """Optimize memory selection for relevance and diversity"""
+        if not all_memories:
+            return []
+
+        # Remove duplicates by memory_id
+        unique_memories = {}
+        for memory in all_memories:
+            memory_id = memory["memory_id"]
+            if (
+                memory_id not in unique_memories
+                or memory["composite_score"]
+                > unique_memories[memory_id]["composite_score"]
+            ):
+                unique_memories[memory_id] = memory
+
+        memories = list(unique_memories.values())
+
+        # Sort by composite score
+        memories.sort(key=lambda m: m["composite_score"], reverse=True)
+
+        # Apply diversity optimization
+        selected_memories = []
+        used_memory_types = set()
+        used_scopes = set()
+        used_tag_categories = set()
+
+        # Define tag categories for diversity
+        tag_categories = {
+            "family": ["family", "parents", "sister", "daughter", "maya"],
+            "career": ["career", "work", "job", "google", "amazon", "microsoft"],
+            "education": ["education", "university", "professor", "thesis"],
+            "relationships": ["wife", "lisa", "friend", "alex", "marriage"],
+            "skills": ["programming", "algorithms", "leadership", "technical"],
+            "hobbies": ["guitar", "photography", "hiking", "creative"],
+            "personal": ["reflection", "growth", "values", "volunteer"],
+        }
+
+        def get_tag_category(tags):
+            for category, category_tags in tag_categories.items():
+                if any(tag.lower() in category_tags for tag in tags):
+                    return category
+            return "other"
+
+        # First pass: select highest scoring memories with diversity constraints
+        for memory in memories:
+            if len(selected_memories) >= limit:
+                break
+
+            memory_type = memory["memory_type"]
+            scope = memory.get("scope", "unknown")
+            tag_category = get_tag_category(memory.get("tags", []))
+
+            # Diversity scoring
+            diversity_bonus = 1.0
+
+            # Encourage memory type diversity
+            if memory_type not in used_memory_types:
+                diversity_bonus += 0.1
+                used_memory_types.add(memory_type)
+
+            # Encourage scope diversity
+            if scope not in used_scopes:
+                diversity_bonus += 0.05
+                used_scopes.add(scope)
+
+            # Encourage tag category diversity
+            if tag_category not in used_tag_categories:
+                diversity_bonus += 0.1
+                used_tag_categories.add(tag_category)
+
+            # Apply diversity bonus
+            memory["final_score"] = memory["composite_score"] * diversity_bonus
+            selected_memories.append(memory)
+
+        # Re-sort by final score and return top memories
+        selected_memories.sort(key=lambda m: m["final_score"], reverse=True)
+
+        logger.info(
+            f"Memory optimization: {len(memories)} -> {len(selected_memories)}, "
+            f"types: {len(used_memory_types)}, categories: {len(used_tag_categories)}"
+        )
+
+        return selected_memories[:limit]

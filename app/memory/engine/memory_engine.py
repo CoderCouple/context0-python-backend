@@ -93,9 +93,13 @@ class MemoryEngine:
                 await self._initialize_mongodb(doc_config)
 
             # Initialize Time Series Store (TimescaleDB)
-            time_config = config_loader.get_time_store_config()
-            if time_config.get("provider") == "timescaledb":
-                await self._initialize_timescaledb(time_config)
+            try:
+                time_config = config_loader.get_time_store_config()
+                if time_config and time_config.get("provider") == "timescaledb":
+                    await self._initialize_timescaledb(time_config)
+            except Exception as e:
+                print(f"⚠️ TimescaleDB not configured: {e}")
+                self.timeseries_store = None
 
             # Initialize Audit Store (MongoDB)
             audit_config = config_loader.get_audit_store_config()

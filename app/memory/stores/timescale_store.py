@@ -715,6 +715,16 @@ class TimescaleTimeSeriesStore(TimeSeriesStore):
                     # Policy might already exist
                     pass
 
+    async def get_total_event_count(self) -> int:
+        """Get total number of events in the timeseries store"""
+        try:
+            async with self.pool.acquire() as conn:
+                result = await conn.fetchval(f"SELECT COUNT(*) FROM {self.table_name}")
+                return result if result else 0
+        except Exception as e:
+            print(f"Error counting events: {e}")
+            return 0
+
     async def close(self):
         """Close TimescaleDB connection pool"""
         if self.pool:

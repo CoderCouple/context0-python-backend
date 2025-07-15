@@ -569,6 +569,17 @@ class Neo4jGraphStore(GraphStore):
                 "user_id": user_id,
             }
 
+    async def get_total_node_count(self) -> int:
+        """Get total number of nodes in the graph"""
+        try:
+            async with self.driver.session(database=self.database) as session:
+                result = await session.run("MATCH (n) RETURN count(n) as total")
+                record = await result.single()
+                return record["total"] if record else 0
+        except Exception as e:
+            print(f"Error counting nodes: {e}")
+            return 0
+
     async def close(self):
         """Close Neo4j driver"""
         if self.driver:

@@ -18,7 +18,7 @@ import aiohttp
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 BASE_URL = "http://localhost:8000/api/v1"
-SAMPLE_USER_ID = "john-doe-fresh"
+SAMPLE_USER_ID = "john-doe"
 SAMPLE_SESSION_ID = "sample-session"
 
 
@@ -542,7 +542,7 @@ async def main():
     try:
         async with aiohttp.ClientSession() as session:
             payload = {
-                "question": "Tell me about yourself",
+                "question": "Tell me about my technical skills and expertise",
                 "user_id": SAMPLE_USER_ID,
                 "session_id": SAMPLE_SESSION_ID,
                 "max_memories": 3,

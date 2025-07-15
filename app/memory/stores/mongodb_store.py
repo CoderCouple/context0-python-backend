@@ -231,6 +231,66 @@ class MongoDocumentStore(DocumentStore):
         docs = await cursor.to_list(length=limit)
         return [self._dict_to_memory_entry(doc) for doc in docs]
 
+    async def get_memory(self, memory_id: str) -> Optional[Dict[str, Any]]:
+        """Get a specific memory by ID"""
+        try:
+            doc = await self.collection.find_one({"id": memory_id})
+            if doc:
+                # Convert ObjectId to string for JSON serialization
+                if "_id" in doc:
+                    doc["_id"] = str(doc["_id"])
+                return doc
+            return None
+        except Exception as e:
+            print(f"Error getting memory {memory_id}: {e}")
+            return None
+
+    async def get_total_document_count(self) -> int:
+        """Get total number of documents in collection"""
+        try:
+            return await self.collection.count_documents({})
+        except Exception as e:
+            print(f"Error counting documents: {e}")
+            return 0
+
+    async def search_memories(
+        self,
+        user_id: str,
+        query_text: str,
+        memory_types: Optional[List[str]] = None,
+        tags: Optional[List[str]] = None,
+        limit: int = 10,
+    ) -> List[Dict[str, Any]]:
+        """Search memories with text query and filters"""
+        try:
+            # Build MongoDB query
+            filter_query = {"source_user_id": user_id}
+
+            if memory_types:
+                filter_query["memory_type"] = {"$in": memory_types}
+
+            if tags:
+                filter_query["tags"] = {"$in": tags}
+
+            # Add text search if query provided
+            if query_text.strip():
+                filter_query["$text"] = {"$search": query_text}
+
+            cursor = self.collection.find(filter_query).limit(limit)
+            docs = await cursor.to_list(length=limit)
+
+            # Convert to simplified format for search results
+            results = []
+            for doc in docs:
+                if "_id" in doc:
+                    doc["_id"] = str(doc["_id"])
+                results.append(doc)
+
+            return results
+        except Exception as e:
+            print(f"Error searching memories: {e}")
+            return []
+
     async def close(self):
         """Clean shutdown of MongoDB store"""
         if self.client:

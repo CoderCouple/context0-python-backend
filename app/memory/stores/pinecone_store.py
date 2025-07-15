@@ -348,6 +348,31 @@ class PineconeVectorStore(VectorStore):
             self.executor, _batch_upsert
         )
 
+    async def delete_all_vectors(self):
+        """Delete all vectors from the index"""
+        if not self.index:
+            await self.initialize()
+
+        def _delete_all():
+            # Delete all vectors in the namespace
+            self.index.delete(delete_all=True)
+            return True
+
+        return await asyncio.get_event_loop().run_in_executor(
+            self.executor, _delete_all
+        )
+
+    async def get_total_vector_count(self) -> int:
+        """Get total number of vectors in the index"""
+        if not self.index:
+            return 0
+
+        def _get_stats():
+            stats = self.index.describe_index_stats()
+            return stats.total_vector_count if stats else 0
+
+        return await asyncio.get_event_loop().run_in_executor(self.executor, _get_stats)
+
     async def close(self):
         """Close Pinecone connections"""
         if self.executor:
