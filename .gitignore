@@ -123,7 +123,7 @@ celerybeat.pid
 
 # Environments
 # For this course, we DO want to commit .env
-# .env
+.env
 .venv
 env/
 venv/
