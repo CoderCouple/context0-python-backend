@@ -3,9 +3,8 @@ import logging
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.common.auth import UserContext
-from app.common.enums import ClerkEvent, UserRole
-from app.model.organization_model import Organization
+from app.common.auth.auth import UserContext
+from app.common.enum.user import ClerkEvent, UserRole
 from app.model.user_model import User
 
 logger = logging.getLogger(__name__)

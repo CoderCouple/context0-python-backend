@@ -4,16 +4,16 @@ import logging
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app.api.base_response import BaseResponse, success_response
 from app.api.tags import Tags
 from app.api.v1.request.workflow_request import (
     CreateWorkflowRequest,
     DeleteWorkflowRequest,
     UpdateWorkflowRequest,
 )
+from app.api.v1.response.base_response import BaseResponse, success_response
 from app.api.v1.response.workflow_response import WorkflowListResponse, WorkflowResponse
-from app.common.auth import UserContext
-from app.common.role_decorator import require_roles
+from app.common.auth.auth import UserContext
+from app.common.auth.role_decorator import require_roles
 from app.db.session import get_db
 from app.service.workflow_service import WorkflowService
 

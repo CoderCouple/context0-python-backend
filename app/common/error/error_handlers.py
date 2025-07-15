@@ -11,7 +11,7 @@ from starlette.status import (
     HTTP_500_INTERNAL_SERVER_ERROR,
 )
 
-from app.api.base_response import BaseResponse
+from app.api.v1.response.base_response import BaseResponse
 from app.common.error.app_error import AppError
 
 logger = logging.getLogger(__name__)

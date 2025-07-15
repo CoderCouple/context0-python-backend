@@ -1,0 +1,52 @@
+version: v1.0
+
+# Production configuration with environment variable support
+# Vector store configuration - Using Pinecone for production scale
+vector_store:
+  provider: pinecone
+  persistence: disk
+  config:
+    api_key: "${PINECONE_API_KEY}"
+    environment: "${PINECONE_ENVIRONMENT:-us-east-1-aws}"
+    index_name: "${PINECONE_INDEX_NAME:-memory-index}"
+
+# Graph store configuration - Using Neo4j for relationship mapping
+graph_store:
+  provider: neo4j
+  persistence: disk
+  config:
+    uri: "${NEO4J_URI:-bolt://localhost:7687}"
+    username: "${NEO4J_USERNAME:-neo4j}"
+    password: "${NEO4J_PASSWORD}"
+    database: "${NEO4J_DATABASE:-neo4j}"
+
+# Document store configuration - Using MongoDB for structured storage
+doc_store:
+  provider: mongodb
+  persistence: disk
+  config:
+    connection_string: "${MONGODB_CONNECTION_STRING:-mongodb://localhost:27017}"
+    database_name: "${MONGODB_DATABASE:-memory_system}"
+    collection_name: "${MONGODB_COLLECTION:-memories}"
+
+# Time series store configuration - Using TimescaleDB for temporal analysis
+time_store:
+  provider: timescaledb
+  persistence: disk
+  config:
+    connection_string: "${TIMESCALE_CONNECTION_STRING:-postgresql://user:pass@localhost:5432/timescale_db}"
+    table_name: "${TIMESCALE_TABLE_NAME:-memory_timeseries}"
+
+# Audit store configuration - Using MongoDB for audit logging
+audit_store:
+  provider: mongodb
+  persistence: disk
+  config:
+    connection_string: "${MONGODB_AUDIT_CONNECTION_STRING:-mongodb://localhost:27017}"
+    database_name: "${MONGODB_AUDIT_DATABASE:-memory_audit}"
+    collection_name: "${MONGODB_AUDIT_COLLECTION:-audit_log}"
+
+prompt:
+  fact_extraction: null
+  memory_update: null
+  procedural_memory: null

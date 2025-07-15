@@ -4,7 +4,7 @@ from typing import Annotated, Optional
 
 from pydantic import BaseModel, Field
 
-from app.common.enums import WorkflowStatus
+from app.common.enum.workflow import WorkflowStatus
 
 
 class CreateWorkflowRequest(BaseModel):

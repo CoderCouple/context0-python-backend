@@ -5,7 +5,7 @@ from sqlalchemy import TIMESTAMP, Boolean, Column
 from sqlalchemy import Enum as SqlEnum
 from sqlalchemy import String
 
-from app.common.enums import UserRole
+from app.common.enum.user import UserRole
 from app.db.base import Base
 
 

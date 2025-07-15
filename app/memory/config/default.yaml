@@ -1,0 +1,55 @@
+version: v1.0
+
+# Development configuration using local Docker containers
+# Run: docker-compose up -d to start all services
+
+# Vector store configuration - Using Pinecone (cloud)
+vector_store:
+  provider: pinecone
+  persistence: disk
+  config:
+    api_key: "${PINECONE_API_KEY}"
+    environment: "${PINECONE_ENVIRONMENT:-us-east-1-aws}"
+    index_name: "${PINECONE_INDEX_NAME:-memory-index}"
+
+# Graph store configuration - Using Neo4j Aura (cloud)
+graph_store:
+  provider: neo4j
+  persistence: disk
+  config:
+    uri: "${NEO4J_URI}"
+    username: "${NEO4J_USERNAME}"
+    password: "${NEO4J_PASSWORD}"
+    database: "${NEO4J_DATABASE}"
+
+# Document store configuration - Using MongoDB Atlas (cloud)
+doc_store:
+  provider: mongodb
+  persistence: disk
+  config:
+    connection_string: "${MONGODB_CONNECTION_STRING}"
+    database_name: "memory_system"
+    collection_name: "memories"
+
+# Time series store configuration - Using TimescaleDB Cloud
+time_store:
+  provider: timescaledb
+  persistence: disk
+  config:
+    connection_string: "${TIMESCALE_CONNECTION_STRING}"
+    table_name: "memory_timeseries"
+
+# Audit store configuration - Using MongoDB Atlas (cloud)
+audit_store:
+  provider: mongodb
+  persistence: disk
+  config:
+    connection_string: "${MONGODB_AUDIT_CONNECTION_STRING}"
+    database_name: "memory_audit"
+    collection_name: "audit_log"
+
+
+prompt:
+  fact_extraction: null
+  memory_update: null
+  procedural_memory: null

@@ -5,18 +5,18 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
-from app.api.base_response import BaseResponse, success_response
 from app.api.tags import Tags
 from app.api.v1.request.credential_request import (
     CreateCredentialRequest,
     DeleteCredentialRequest,
 )
+from app.api.v1.response.base_response import BaseResponse, success_response
 from app.api.v1.response.credential_response import (
     CredentialListResponse,
     CredentialResponse,
 )
-from app.common.auth import UserContext
-from app.common.role_decorator import require_roles
+from app.common.auth.auth import UserContext
+from app.common.auth.role_decorator import require_roles
 from app.db.session import get_db
 from app.service.credential_service import CredentialService
 

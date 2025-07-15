@@ -14,11 +14,16 @@ services:
       - .env
     depends_on:
       - db
+      - mongodb
+      - timescaledb
+      - neo4j
+      - qdrant
     environment:
       POETRY_VIRTUALENVS_CREATE: "false"
       PYTHONUNBUFFERED: "1"
     restart: unless-stopped
 
+  # Original PostgreSQL database
   db:
     image: postgres:16
     environment:
@@ -26,11 +31,132 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: password
     ports:
-      - "5432:5432"
+      - "5433:5432"  # Changed port to avoid conflict with TimescaleDB
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./docker-init-scripts:/docker-entrypoint-initdb.d:ro  # 👈 mount DDL SQLs in the container
+      - ./docker-init-scripts:/docker-entrypoint-initdb.d:ro
     restart: unless-stopped
+
+  # Memory System Databases
+  
+  # MongoDB for document storage and audit logging
+  mongodb:
+    image: mongo:7.0
+    container_name: memory-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: devpassword
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - default
+
+  # TimescaleDB for time series data
+  timescaledb:
+    image: timescale/timescaledb:latest-pg15
+    container_name: memory-timescaledb
+    restart: unless-stopped
+    ports:
+      - "5434:5432"
+    environment:
+      POSTGRES_DB: timescale_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: devpassword
+    volumes:
+      - timescaledb_data:/var/lib/postgresql/data
+    networks:
+      - default
+
+  # Neo4j for graph relationships
+  neo4j:
+    image: neo4j:5.13-community
+    container_name: memory-neo4j
+    restart: unless-stopped
+    ports:
+      - "7474:7474"  # HTTP
+      - "7687:7687"  # Bolt
+    environment:
+      NEO4J_AUTH: neo4j/devpassword
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_dbms_security_procedures_unrestricted: apoc.*
+      NEO4J_dbms_security_procedures_allowlist: apoc.*
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+    networks:
+      - default
+
+  # Qdrant for vector storage
+  qdrant:
+    image: qdrant/qdrant:v1.7.0
+    container_name: memory-qdrant
+    restart: unless-stopped
+    ports:
+      - "6333:6333"  # HTTP API
+      - "6334:6334"  # gRPC API
+    volumes:
+      - qdrant_data:/qdrant/storage
+    networks:
+      - default
+
+  # Optional: Redis for caching
+  redis:
+    image: redis:7-alpine
+    container_name: memory-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --requirepass devpassword
+    volumes:
+      - redis_data:/data
+    networks:
+      - default
+
+  # Optional: pgAdmin for database management
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: memory-pgadmin
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@memory.dev
+      PGADMIN_DEFAULT_PASSWORD: devpassword
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    networks:
+      - default
+    depends_on:
+      - timescaledb
+      - db
+
+  # Optional: Mongo Express for MongoDB management
+  mongo-express:
+    image: mongo-express:latest
+    container_name: memory-mongo-express
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      ME_CONFIG_MONGODB_ADMINUSERNAME: admin
+      ME_CONFIG_MONGODB_ADMINPASSWORD: devpassword
+      ME_CONFIG_MONGODB_URL: mongodb://admin:devpassword@mongodb:27017/
+      ME_CONFIG_BASICAUTH_USERNAME: admin
+      ME_CONFIG_BASICAUTH_PASSWORD: devpassword
+    networks:
+      - default
+    depends_on:
+      - mongodb
 
 volumes:
   pgdata:
+  mongodb_data:
+  timescaledb_data:
+  neo4j_data:
+  neo4j_logs:
+  qdrant_data:
+  redis_data:
+  pgadmin_data:

@@ -8,6 +8,9 @@ class Tags(Enum):
     # Memory
     Memory = "Memory"
 
+    # Q&A and Reasoning
+    QA = "Q&A"
+
     # Workflow
     Workflow = "Workflow"
     Workflow_Execution = "Workflow_Execution"

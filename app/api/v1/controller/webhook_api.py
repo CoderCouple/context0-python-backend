@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from svix.webhooks import Webhook, WebhookVerificationError
 
 from app.api.tags import Tags
-from app.common.auth import UserContext
+from app.common.auth.auth import UserContext
 from app.db.session import get_db
 from app.service.webhook_service import WebhookService
 from app.settings import settings

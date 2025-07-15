@@ -11,7 +11,7 @@ from app.api.v1.response.credential_response import (
     CredentialListResponse,
     CredentialResponse,
 )
-from app.common.auth import UserContext
+from app.common.auth.auth import UserContext
 from app.model.credential_model import Credential
 
 
