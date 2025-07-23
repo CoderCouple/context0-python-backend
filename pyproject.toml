@@ -4,6 +4,7 @@ version = "0.1.0"
 description = ""
 authors = ["Sunildt28 <sunil@prepto.com>"]
 readme = "README.md"
+package-mode = false
 
 [tool.poetry.dependencies]
 python = ">=3.11,<4.0"
@@ -28,9 +29,9 @@ neo4j = "^5.28.1"
 langchain = "^0.3.26"
 openai = "^1.95.1"
 python-dateutil = "^2.9.0.post0"
-pinecone = "^7.3.0"
 qdrant-client = "^1.14.3"
 aiohttp = "^3.12.14"
+pinecone = "<=7.3.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^7.4.1"

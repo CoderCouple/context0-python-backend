@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from sqlalchemy.orm import Session
 from starlette import status
 
 from app.api.tags import Tags
@@ -26,7 +27,10 @@ from app.api.v1.response.memory_response import (
     SearchResponse,
     TimelineResponse,
 )
+from app.common.auth.auth import UserContext, get_current_user_context
+from app.common.auth.role_decorator import require_roles
 from app.common.logging.logging import log_memory_operation
+from app.db.session import get_db
 from app.service.memory_service import MemoryService
 
 logger = logging.getLogger(__name__)
@@ -100,7 +104,9 @@ async def get_memory(
 
 @router.get("/memories", response_model=BaseResponse[List[MemoryEntry]])
 async def list_memories(
-    user_id: str = Query(..., description="User ID for filtering"),
+    user_id: Optional[str] = Query(
+        None, description="User ID for filtering (defaults to context user)"
+    ),
     memory_type: Optional[str] = Query(None, description="Filter by memory type"),
     tags: Optional[List[str]] = Query(None, description="Filter by tags"),
     limit: int = Query(20, ge=1, le=100, description="Number of memories to return"),
@@ -108,11 +114,18 @@ async def list_memories(
     sort_by: str = Query("created_at", description="Sort field"),
     sort_order: str = Query("desc", description="Sort order (asc/desc)"),
     memory_service: MemoryService = Depends(get_memory_service),
+    context: UserContext = Depends(get_current_user_context),
 ):
-    """List memories with filtering and pagination"""
+    """List memories with filtering and pagination
+
+    If user_id is not provided, uses the authenticated user's ID from context.
+    """
     try:
+        # Use provided user_id or fall back to context user_id
+        actual_user_id = user_id or context.user_id
+
         memories = await memory_service.list_memories(
-            user_id=user_id,
+            user_id=actual_user_id,
             memory_type=memory_type,
             tags=tags,
             limit=limit,

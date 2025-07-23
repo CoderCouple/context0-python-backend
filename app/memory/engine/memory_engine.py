@@ -79,22 +79,26 @@ class MemoryEngine:
         try:
             # Initialize Vector Store (Pinecone)
             vector_config = config_loader.get_vector_store_config()
+            print(f"📊 Vector Store Config: {vector_config}")
             if vector_config.get("provider") == "pinecone":
                 await self._initialize_pinecone(vector_config)
 
             # Initialize Graph Store (Neo4j)
             graph_config = config_loader.get_graph_store_config()
+            print(f"📊 Graph Store Config: {graph_config}")
             if graph_config.get("provider") == "neo4j":
                 await self._initialize_neo4j(graph_config)
 
             # Initialize Document Store (MongoDB)
             doc_config = config_loader.get_doc_store_config()
+            print(f"📊 Document Store Config: {doc_config}")
             if doc_config.get("provider") == "mongodb":
                 await self._initialize_mongodb(doc_config)
 
             # Initialize Time Series Store (TimescaleDB)
             try:
                 time_config = config_loader.get_time_store_config()
+                print(f"📊 Time Series Store Config: {time_config}")
                 if time_config and time_config.get("provider") == "timescaledb":
                     await self._initialize_timescaledb(time_config)
             except Exception as e:
@@ -103,8 +107,28 @@ class MemoryEngine:
 
             # Initialize Audit Store (MongoDB)
             audit_config = config_loader.get_audit_store_config()
+            print(f"📊 Audit Store Config: {audit_config}")
             if audit_config.get("provider") == "mongodb":
                 await self._initialize_audit_store(audit_config)
+
+            # Print LLM and Embedder configs
+            try:
+                llm_config = config_loader.get_llm_config()
+                print(f"📊 LLM Config: {llm_config}")
+            except Exception as e:
+                print(f"⚠️ LLM config error: {e}")
+
+            try:
+                embedder_config = config_loader.get_embedder_config()
+                print(f"📊 Embedder Config: {embedder_config}")
+            except Exception as e:
+                print(f"⚠️ Embedder config error: {e}")
+
+            try:
+                system_config = config_loader.get_system_config()
+                print(f"📊 System Config: {system_config}")
+            except Exception as e:
+                print(f"⚠️ System config error: {e}")
 
             self._initialized = True
             print("Memory Engine initialized successfully")
@@ -132,6 +156,10 @@ class MemoryEngine:
             print("✅ Pinecone vector store initialized")
         except Exception as e:
             print(f"❌ Failed to initialize Pinecone: {e}")
+            print(
+                "   Continuing without vector store - will use document store fallback"
+            )
+            self.vector_store = None
 
     async def _initialize_neo4j(self, config: dict):
         """Initialize Neo4j graph store"""

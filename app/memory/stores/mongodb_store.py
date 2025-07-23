@@ -291,6 +291,53 @@ class MongoDocumentStore(DocumentStore):
             print(f"Error searching memories: {e}")
             return []
 
+    async def list_memories(
+        self,
+        user_id: str,
+        memory_type: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+        limit: int = 20,
+        offset: int = 0,
+        sort_by: str = "created_at",
+        sort_order: str = "desc",
+    ) -> List[Dict[str, Any]]:
+        """List memories with filtering and pagination"""
+        try:
+            # Build MongoDB query
+            filter_query = {"source_user_id": user_id}
+
+            if memory_type:
+                filter_query["memory_type"] = memory_type
+
+            if tags:
+                filter_query["tags"] = {"$in": tags}
+
+            # Build sort criteria
+            sort_direction = -1 if sort_order.lower() == "desc" else 1
+            sort_criteria = [(sort_by, sort_direction)]
+
+            # Execute query with pagination
+            cursor = (
+                self.collection.find(filter_query)
+                .sort(sort_criteria)
+                .skip(offset)
+                .limit(limit)
+            )
+
+            docs = await cursor.to_list(length=limit)
+
+            # Convert to simplified format
+            results = []
+            for doc in docs:
+                if "_id" in doc:
+                    doc["_id"] = str(doc["_id"])
+                results.append(doc)
+
+            return results
+        except Exception as e:
+            print(f"Error listing memories: {e}")
+            return []
+
     async def close(self):
         """Clean shutdown of MongoDB store"""
         if self.client:

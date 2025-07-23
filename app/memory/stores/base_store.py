@@ -62,6 +62,16 @@ class VectorStore(BaseStore):
         """Batch insert memory entries with embeddings"""
         pass
 
+    @abstractmethod
+    async def delete_memory(self, memory_id: str) -> bool:
+        """Delete a memory by ID"""
+        pass
+
+    @abstractmethod
+    async def update_memory(self, memory_id: str, memory_dict: Dict[str, Any]) -> bool:
+        """Update a memory entry"""
+        pass
+
 
 class GraphStore(BaseStore):
     """Interface for graph stores (Neo4j, etc.)"""
@@ -116,6 +126,20 @@ class DocumentStore(BaseStore):
         self, fields: List[str], options: Optional[Dict[str, Any]] = None
     ):
         """Create index on fields"""
+        pass
+
+    @abstractmethod
+    async def list_memories(
+        self,
+        user_id: str,
+        memory_type: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+        limit: int = 20,
+        offset: int = 0,
+        sort_by: str = "created_at",
+        sort_order: str = "desc",
+    ) -> List[Dict[str, Any]]:
+        """List memories with filtering and pagination"""
         pass
 
 

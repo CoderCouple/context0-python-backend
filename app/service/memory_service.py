@@ -139,7 +139,45 @@ class MemoryService:
                 sort_order=sort_order,
             )
 
-            result = [MemoryEntry(**memory) for memory in memories]
+            # Transform MongoDB documents to match MemoryEntry model structure
+            result = []
+            for memory in memories:
+                # Extract confidence from meta object and add to top level
+                transformed_memory = memory.copy()
+                if "meta" in memory and isinstance(memory["meta"], dict):
+                    transformed_memory["confidence"] = memory["meta"].get(
+                        "confidence_score", 0.0
+                    )
+                else:
+                    transformed_memory["confidence"] = 0.0
+
+                # Ensure required fields have default values
+                transformed_memory.setdefault("access_count", 0)
+                transformed_memory.setdefault("is_deleted", False)
+                transformed_memory.setdefault("tags", [])
+                transformed_memory.setdefault("meta", {})
+
+                # Convert memory_type string to enum if needed
+                if "memory_type" in transformed_memory and isinstance(
+                    transformed_memory["memory_type"], str
+                ):
+                    from app.common.enum.memory import MemoryType
+
+                    try:
+                        transformed_memory["memory_type"] = MemoryType(
+                            transformed_memory["memory_type"]
+                        )
+                    except ValueError:
+                        transformed_memory["memory_type"] = MemoryType.SEMANTIC_MEMORY
+
+                try:
+                    result.append(MemoryEntry(**transformed_memory))
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to create MemoryEntry from document {memory.get('id', 'unknown')}: {e}"
+                    )
+                    continue
+
             logger.info(f"Retrieved {len(result)} memories for user {user_id}")
             return result
 

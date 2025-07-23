@@ -1,13 +1,21 @@
 import asyncio
 import json
+import logging
+import os
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional
 
-import pinecone
-from pinecone import Pinecone, ServerlessSpec
+try:
+    from pinecone import Pinecone, ServerlessSpec, PodSpec
+except ImportError:
+    raise ImportError(
+        "Pinecone requires extra dependencies. Install with `pip install 'pinecone[asyncio]'` or `poetry add 'pinecone[asyncio]'`"
+    ) from None
 
 from app.memory.models.memory_entry import MemoryEntry
 from app.memory.stores.base_store import VectorStore
+
+logger = logging.getLogger(__name__)
 
 
 class PineconeVectorStore(VectorStore):
@@ -15,39 +23,67 @@ class PineconeVectorStore(VectorStore):
 
     def __init__(
         self,
-        api_key: str,
+        api_key: Optional[str] = None,
         environment: str = "us-east-1-aws",
         index_name: str = "memory-index",
+        serverless_config: Optional[Dict[str, Any]] = None,
+        pod_config: Optional[Dict[str, Any]] = None,
+        metric: str = "cosine",
     ):
         """Initialize Pinecone client"""
-        self.api_key = api_key
+        # Get API key from parameter or environment
+        self.api_key = api_key or os.environ.get("PINECONE_API_KEY")
+        if not self.api_key:
+            raise ValueError(
+                "Pinecone API key must be provided either as a parameter or as an environment variable PINECONE_API_KEY"
+            )
+
         self.environment = environment
         self.index_name = index_name
+        self.serverless_config = serverless_config
+        self.pod_config = pod_config
+        self.metric = metric
         self.pc = None
         self.index = None
         self.executor = ThreadPoolExecutor(max_workers=10)
+
+        # Initialize Pinecone client
+        self.pc = Pinecone(api_key=self.api_key)
 
     async def initialize(self):
         """Initialize Pinecone connection and index"""
 
         def _init_pinecone():
-            # Initialize Pinecone
-            self.pc = Pinecone(api_key=self.api_key)
-
             # Check if index exists, create if not
             existing_indexes = [index.name for index in self.pc.list_indexes()]
 
             if self.index_name not in existing_indexes:
+                logger.info(f"Creating Pinecone index: {self.index_name}")
+
+                # Determine spec based on configuration
+                if self.serverless_config:
+                    spec = ServerlessSpec(**self.serverless_config)
+                elif self.pod_config:
+                    spec = PodSpec(**self.pod_config)
+                else:
+                    # Default to serverless
+                    spec = ServerlessSpec(cloud="aws", region="us-east-1")
+
                 # Create index with 1536 dimensions (OpenAI embeddings)
                 self.pc.create_index(
                     name=self.index_name,
                     dimension=1536,
-                    metric="cosine",
-                    spec=ServerlessSpec(cloud="aws", region=self.environment),
+                    metric=self.metric,
+                    spec=spec,
+                )
+            else:
+                logger.debug(
+                    f"Index {self.index_name} already exists. Skipping creation."
                 )
 
             # Connect to index
             self.index = self.pc.Index(self.index_name)
+            logger.info(f"✅ Connected to Pinecone index: {self.index_name}")
 
         # Run in thread pool since Pinecone client is sync
         await asyncio.get_event_loop().run_in_executor(self.executor, _init_pinecone)
@@ -373,8 +409,85 @@ class PineconeVectorStore(VectorStore):
 
         return await asyncio.get_event_loop().run_in_executor(self.executor, _get_stats)
 
+    async def delete_memory(self, memory_id: str) -> bool:
+        """Delete a memory by ID"""
+        if not self.index:
+            await self.initialize()
+
+        def _delete():
+            try:
+                self.index.delete(ids=[memory_id])
+                logger.info(f"Deleted memory {memory_id} from Pinecone")
+                return True
+            except Exception as e:
+                logger.error(f"Error deleting memory {memory_id}: {e}")
+                return False
+
+        return await asyncio.get_event_loop().run_in_executor(self.executor, _delete)
+
+    async def update_memory(self, memory_id: str, memory_dict: Dict[str, Any]) -> bool:
+        """Update a memory entry"""
+        if not self.index:
+            await self.initialize()
+
+        def _update():
+            try:
+                # Extract embedding and metadata
+                embedding = memory_dict.get("embedding")
+                if not embedding:
+                    logger.warning(f"No embedding provided for memory {memory_id}")
+                    return False
+
+                # Prepare metadata (same as in add_memory)
+                input_text = memory_dict.get("input") or memory_dict.get("text") or ""
+                summary_text = memory_dict.get("summary") or ""
+
+                metadata = {
+                    "memory_id": memory_dict.get("id", memory_id),
+                    "user_id": memory_dict.get("source_user_id")
+                    or memory_dict.get("meta", {}).get("user_id"),
+                    "session_id": memory_dict.get("source_session_id")
+                    or memory_dict.get("meta", {}).get("session_id"),
+                    "memory_type": memory_dict.get("memory_type"),
+                    "scope": memory_dict.get("scope"),
+                    "created_at": memory_dict.get("created_at"),
+                    "updated_at": memory_dict.get("updated_at"),
+                    "input": input_text[:1000] if input_text else None,
+                    "summary": summary_text[:500] if summary_text else None,
+                    "tags": ",".join(memory_dict.get("tags", [])[:10]),
+                    "confidence": memory_dict.get("meta", {}).get("confidence_score"),
+                }
+
+                # Clean metadata
+                clean_metadata = {}
+                for k, v in metadata.items():
+                    if v is not None:
+                        if hasattr(v, "isoformat"):
+                            clean_metadata[k] = v.isoformat()
+                        else:
+                            clean_metadata[k] = str(v)
+
+                # Upsert (update or insert)
+                self.index.upsert(
+                    vectors=[
+                        {
+                            "id": memory_id,
+                            "values": embedding,
+                            "metadata": clean_metadata,
+                        }
+                    ]
+                )
+                logger.info(f"Updated memory {memory_id} in Pinecone")
+                return True
+            except Exception as e:
+                logger.error(f"Error updating memory {memory_id}: {e}")
+                return False
+
+        return await asyncio.get_event_loop().run_in_executor(self.executor, _update)
+
     async def close(self):
         """Close Pinecone connections"""
         if self.executor:
             self.executor.shutdown(wait=True)
         # Pinecone client doesn't need explicit closing
+        logger.info("✅ Pinecone store closed")

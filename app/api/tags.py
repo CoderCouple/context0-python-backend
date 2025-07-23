@@ -22,4 +22,5 @@ class Tags(Enum):
     # Common
     Permission = "Permission"
     Analytics = "Analytics"
+    Billing = "Billing"
     Credential = "Credential"

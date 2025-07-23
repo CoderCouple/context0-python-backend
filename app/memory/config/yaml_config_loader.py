@@ -44,6 +44,8 @@ class YAMLConfigLoader:
         if not self.config_path.exists():
             raise FileNotFoundError(f"Configuration file not found: {self.config_path}")
 
+        print(f"🔧 Loading configuration from: {self.config_path}")
+
         with open(self.config_path, "r") as file:
             raw_content = file.read()
 
@@ -107,6 +109,21 @@ class YAMLConfigLoader:
     def get_audit_store_config(self) -> Dict[str, Any]:
         """Get audit store configuration"""
         return self.get_store_config("audit_store")
+
+    def get_llm_config(self) -> Dict[str, Any]:
+        """Get LLM configuration"""
+        config = self.load_config()
+        return config.get("llm", {})
+
+    def get_embedder_config(self) -> Dict[str, Any]:
+        """Get embedder configuration"""
+        config = self.load_config()
+        return config.get("embedder", {})
+
+    def get_system_config(self) -> Dict[str, Any]:
+        """Get system configuration"""
+        config = self.load_config()
+        return config.get("system", {})
 
 
 # Global configuration loader instance
