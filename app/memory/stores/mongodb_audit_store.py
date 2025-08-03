@@ -8,6 +8,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo import IndexModel
 
 from app.common.enum.memory import MemoryOperation, MemoryType
+from app.memory.config.logging_config import memory_log_config
 from app.memory.models.audit_log import AuditLogEntry
 from app.memory.models.memory_entry import MemoryEntry
 from app.memory.stores.base_store import AuditStore
@@ -208,14 +209,14 @@ class MongoAuditStore(AuditStore):
             return True
 
         except Exception as e:
-            print(f"MongoDB audit store health check failed: {e}")
+            memory_log_config.log_error(f"MongoDB audit store health check failed: {e}")
             return False
 
     async def close(self):
         """Clean shutdown of MongoDB audit store"""
         if self.client:
             self.client.close()
-            print("✅ MongoDB audit store closed")
+            memory_log_config.log_success("MongoDB audit store closed")
 
     # ==========================================
     # TIME-TRAVEL DEBUGGING METHODS
@@ -541,7 +542,7 @@ class MongoAuditStore(AuditStore):
         try:
             return await self.collection.count_documents({})
         except Exception as e:
-            print(f"Error counting audit entries: {e}")
+            memory_log_config.log_error(f"Error counting audit entries: {e}")
             return 0
 
     async def close(self):

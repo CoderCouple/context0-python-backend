@@ -24,3 +24,9 @@ class Tags(Enum):
     Analytics = "Analytics"
     Billing = "Billing"
     Credential = "Credential"
+
+    # LLM Memory Management
+    LLMMemory = "LLM Memory"
+
+    # Playground
+    Playground = "Playground"

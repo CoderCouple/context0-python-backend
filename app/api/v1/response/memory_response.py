@@ -5,6 +5,8 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 from app.common.enum.memory import MemoryOperation, MemoryType
+from app.common.enum.memory_category import MemoryCategory
+from app.common.enum.memory_emotion import MemoryEmotion
 
 
 class MemoryEntry(BaseModel):
@@ -23,6 +25,15 @@ class MemoryEntry(BaseModel):
     last_accessed: Optional[datetime] = Field(None, description="Last access timestamp")
     access_count: int = Field(default=0, description="Number of times accessed")
     is_deleted: bool = Field(default=False, description="Soft deletion flag")
+    category: Optional[MemoryCategory] = Field(
+        None, description="Primary memory category"
+    )
+    emotion: Optional[MemoryEmotion] = Field(
+        None, description="Primary emotional context"
+    )
+    emotion_intensity: Optional[str] = Field(
+        None, description="Intensity of the emotion"
+    )
     meta: Dict[str, Any] = Field(
         default_factory=dict, description="Additional metadata"
     )
@@ -40,6 +51,12 @@ class SearchResult(BaseModel):
     confidence: float = Field(..., description="Classification confidence")
     content: Optional[str] = Field(None, description="Full content (if requested)")
     scope: Optional[str] = Field(None, description="Memory scope")
+    category: Optional[MemoryCategory] = Field(
+        None, description="Primary memory category"
+    )
+    emotion: Optional[MemoryEmotion] = Field(
+        None, description="Primary emotional context"
+    )
 
 
 class MemoryResponse(BaseModel):

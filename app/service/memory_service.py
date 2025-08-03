@@ -23,10 +23,17 @@ from app.api.v1.response.memory_response import (
     SearchResponse,
     TimelineResponse,
 )
-from app.common.enum.memory import MemoryType
+from app.common.enum.memory import MemoryType, MemoryOperation
 from app.memory.engine.memory_engine import MemoryEngine
+from app.service.memory_categorization_service import MemoryCategoricationService
+from app.common.cache.memory_cache import memory_cache, query_cache
 
 logger = logging.getLogger(__name__)
+
+
+def get_memory_service() -> "MemoryService":
+    """Get memory service instance for dependency injection"""
+    return MemoryService()
 
 
 class MemoryService:
@@ -51,10 +58,18 @@ class MemoryService:
         """Create a new memory"""
         try:
             logger.info(f"Creating memory for user {record_input.user_id}")
-            response = await self.memory_engine.add_memory(record_input)
+
+            # Enrich memory with auto-categorization and emotion detection
+            enriched_input = MemoryCategoricationService.enrich_memory_input(
+                record_input
+            )
+
+            response = await self.memory_engine.add_memory(enriched_input)
 
             if response.success:
                 logger.info(f"Memory created successfully: {response.memory_id}")
+                # Invalidate query cache for this user
+                await query_cache.invalidate_user(record_input.user_id)
             else:
                 logger.warning(f"Failed to create memory: {response.message}")
 
@@ -65,7 +80,7 @@ class MemoryService:
             return MemoryResponse(
                 success=False,
                 memory_id="",
-                operation="CREATE",
+                operation=MemoryOperation.ADD,
                 confidence=0.0,
                 processing_time_ms=0,
                 message=f"Service error: {str(e)}",
@@ -73,6 +88,12 @@ class MemoryService:
 
     async def get_memory(self, memory_id: str, user_id: str) -> Optional[MemoryEntry]:
         """Get a specific memory by ID"""
+        # Check cache first
+        cache_key = f"memory:{user_id}:{memory_id}"
+        cached = await memory_cache.get(cache_key)
+        if cached:
+            return MemoryEntry(**cached)
+
         try:
             logger.info(f"Retrieving memory {memory_id} for user {user_id}")
 
@@ -85,17 +106,24 @@ class MemoryService:
                 logger.warning(f"Memory {memory_id} not found")
                 return None
 
-            # Check user access
-            if memory.get("meta", {}).get("user_id") != user_id:
+            # Check user access - check multiple possible locations for user_id
+            stored_user_id = (
+                memory.get("user_id")
+                or memory.get("meta", {}).get("user_id")
+                or memory.get("permissions", {}).get("owner_id")
+                or memory.get("source_user_id")
+            )
+
+            if stored_user_id != user_id:
                 logger.warning(
-                    f"Access denied for memory {memory_id} to user {user_id}"
+                    f"Access denied for memory {memory_id} to user {user_id} (stored user: {stored_user_id})"
                 )
                 raise PermissionError("Access denied")
 
             # Update access tracking
             access_count = memory.get("access_count", 0) + 1
             last_accessed = datetime.utcnow()
-            await self.memory_engine.doc_store.update_memory(
+            await self.memory_engine.doc_store.update(
                 memory_id,
                 {"access_count": access_count, "last_accessed": last_accessed},
             )
@@ -103,8 +131,44 @@ class MemoryService:
             memory["access_count"] = access_count
             memory["last_accessed"] = last_accessed
 
+            # Extract category and emotion from metadata
+            metadata = memory.get("metadata", {})
+            if "category" in metadata:
+                try:
+                    from app.common.enum.memory_category import MemoryCategory
+
+                    memory["category"] = MemoryCategory(metadata["category"])
+                except:
+                    memory["category"] = None
+
+            if "emotion" in metadata:
+                try:
+                    from app.common.enum.memory_emotion import MemoryEmotion
+
+                    memory["emotion"] = MemoryEmotion(metadata["emotion"])
+                except:
+                    memory["emotion"] = None
+
+            if "emotion_intensity" in metadata:
+                memory["emotion_intensity"] = metadata["emotion_intensity"]
+
+            # Ensure required fields have defaults
+            if "confidence" not in memory:
+                # Check in metadata or custom_metadata
+                confidence = (
+                    memory.get("meta", {}).get("confidence_score")
+                    or memory.get("custom_metadata", {}).get("confidence")
+                    or 1.0
+                )
+                memory["confidence"] = confidence
+
             logger.info(f"Memory {memory_id} retrieved successfully")
-            return MemoryEntry(**memory)
+            memory_entry = MemoryEntry(**memory)
+
+            # Cache the result
+            await memory_cache.set(cache_key, memory_entry.dict())
+
+            return memory_entry
 
         except PermissionError:
             raise
@@ -157,6 +221,33 @@ class MemoryService:
                 transformed_memory.setdefault("tags", [])
                 transformed_memory.setdefault("meta", {})
 
+                # Extract category and emotion from metadata
+                metadata = memory.get("metadata", {})
+                if "category" in metadata:
+                    try:
+                        from app.common.enum.memory_category import MemoryCategory
+
+                        transformed_memory["category"] = MemoryCategory(
+                            metadata["category"]
+                        )
+                    except:
+                        transformed_memory["category"] = None
+
+                if "emotion" in metadata:
+                    try:
+                        from app.common.enum.memory_emotion import MemoryEmotion
+
+                        transformed_memory["emotion"] = MemoryEmotion(
+                            metadata["emotion"]
+                        )
+                    except:
+                        transformed_memory["emotion"] = None
+
+                if "emotion_intensity" in metadata:
+                    transformed_memory["emotion_intensity"] = metadata[
+                        "emotion_intensity"
+                    ]
+
                 # Convert memory_type string to enum if needed
                 if "memory_type" in transformed_memory and isinstance(
                     transformed_memory["memory_type"], str
@@ -187,6 +278,21 @@ class MemoryService:
 
     async def search_memories(self, query: SearchQuery) -> SearchResponse:
         """Search memories using semantic similarity"""
+        # Check cache for this query
+        cache_filters = {
+            "memory_types": [t.value for t in query.memory_types]
+            if query.memory_types
+            else None,
+            "tags": query.tags,
+            "limit": query.limit,
+            "threshold": query.threshold,
+        }
+        cache_key = query_cache.get_key(query.user_id, query.query, cache_filters)
+
+        cached_results = await query_cache.get(cache_key)
+        if cached_results:
+            return SearchResponse(**cached_results)
+
         try:
             logger.info(f"Searching memories for user {query.user_id}: '{query.query}'")
             response = await self.memory_engine.search_memories(query)
@@ -194,6 +300,10 @@ class MemoryService:
             logger.info(
                 f"Search completed: {len(response.results)} results in {response.query_time_ms}ms"
             )
+
+            # Cache the results
+            await query_cache.set(cache_key, response.dict())
+
             return response
 
         except Exception as e:
@@ -283,6 +393,9 @@ class MemoryService:
 
             if success:
                 logger.info(f"Memory {memory_id} updated successfully")
+                # Invalidate caches
+                await memory_cache.delete(f"memory:{user_id}:{memory_id}")
+                await query_cache.invalidate_user(user_id)
                 return {"success": True, "message": "Memory updated successfully"}
             else:
                 raise ValueError("Failed to update memory in store")
@@ -326,6 +439,9 @@ class MemoryService:
                     await self.memory_engine.vector_store.delete_memory(memory_id)
 
                 logger.info(f"Memory {memory_id} deleted successfully")
+                # Invalidate caches
+                await memory_cache.delete(f"memory:{user_id}:{memory_id}")
+                await query_cache.invalidate_user(user_id)
                 return {"success": True, "message": "Memory deleted successfully"}
             else:
                 raise ValueError("Failed to delete memory")

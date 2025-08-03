@@ -29,7 +29,7 @@ router = APIRouter(tags=[Tags.Credential])
 def get_credentials(
     user_id: Optional[str] = Query(None),
     db: Session = Depends(get_db),
-    context: UserContext = Depends(require_roles(["admin", "builder"])),
+    context: UserContext = Depends(require_roles(["admin", "builder", "user"])),
 ):
     actual_user_id = user_id or context.user_id
     creds = CredentialService(db, context).get_credentials_for_user(actual_user_id)
@@ -40,7 +40,7 @@ def get_credentials(
 def create_credential(
     body: CreateCredentialRequest,
     db: Session = Depends(get_db),
-    context: UserContext = Depends(require_roles(["admin", "builder"])),
+    context: UserContext = Depends(require_roles(["admin", "builder", "user"])),
 ):
     credential = CredentialService(db, context).create_credential(body)
     return success_response(credential, "Credential created successfully")
@@ -50,7 +50,7 @@ def create_credential(
 def delete_credential(
     body: DeleteCredentialRequest,
     db: Session = Depends(get_db),
-    context: UserContext = Depends(require_roles(["admin", "builder"])),
+    context: UserContext = Depends(require_roles(["admin", "builder", "user"])),
 ):
     credential = CredentialService(db, context).delete_credential(body)
     return success_response(credential, "Credential deleted successfully")

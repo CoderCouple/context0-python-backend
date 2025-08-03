@@ -7,6 +7,7 @@ from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo import IndexModel
 
+from app.memory.config.logging_config import memory_log_config
 from app.memory.models.memory_entry import MemoryEntry
 from app.memory.stores.base_store import DocumentStore
 
@@ -180,7 +181,7 @@ class MongoDocumentStore(DocumentStore):
             return result.inserted_id is not None
 
         except Exception as e:
-            print(f"Error adding memory to MongoDB: {e}")
+            memory_log_config.log_error(f"Error adding memory to MongoDB: {e}")
             return False
 
     async def health_check(self) -> bool:
@@ -194,7 +195,7 @@ class MongoDocumentStore(DocumentStore):
             return True
 
         except Exception as e:
-            print(f"MongoDB health check failed: {e}")
+            memory_log_config.log_error(f"MongoDB health check failed: {e}")
             return False
 
     async def read(self, memory_id: str) -> Optional[MemoryEntry]:
@@ -242,7 +243,7 @@ class MongoDocumentStore(DocumentStore):
                 return doc
             return None
         except Exception as e:
-            print(f"Error getting memory {memory_id}: {e}")
+            memory_log_config.log_error(f"Error getting memory {memory_id}: {e}")
             return None
 
     async def get_total_document_count(self) -> int:
@@ -250,7 +251,7 @@ class MongoDocumentStore(DocumentStore):
         try:
             return await self.collection.count_documents({})
         except Exception as e:
-            print(f"Error counting documents: {e}")
+            memory_log_config.log_error(f"Error counting documents: {e}")
             return 0
 
     async def search_memories(
@@ -288,7 +289,7 @@ class MongoDocumentStore(DocumentStore):
 
             return results
         except Exception as e:
-            print(f"Error searching memories: {e}")
+            memory_log_config.log_error(f"Error searching memories: {e}")
             return []
 
     async def list_memories(
@@ -335,14 +336,14 @@ class MongoDocumentStore(DocumentStore):
 
             return results
         except Exception as e:
-            print(f"Error listing memories: {e}")
+            memory_log_config.log_error(f"Error listing memories: {e}")
             return []
 
     async def close(self):
         """Clean shutdown of MongoDB store"""
         if self.client:
             self.client.close()
-            print("✅ MongoDB store closed")
+            memory_log_config.log_success("MongoDB store closed")
 
     async def query(
         self,

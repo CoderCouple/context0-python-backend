@@ -5,6 +5,8 @@ import os
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional
 
+from app.memory.config.logging_config import memory_log_config
+
 try:
     from pinecone import Pinecone, ServerlessSpec, PodSpec
 except ImportError:
@@ -129,7 +131,9 @@ class PineconeVectorStore(VectorStore):
             # Get embedding
             embedding = memory_dict.get("embedding", [])
             if not embedding:
-                print(f"Warning: No embedding found for memory {memory_dict.get('id')}")
+                memory_log_config.log_warning(
+                    f"No embedding found for memory {memory_dict.get('id')}"
+                )
                 return False
 
             # Upsert to Pinecone
@@ -151,7 +155,7 @@ class PineconeVectorStore(VectorStore):
             )
             return result
         except Exception as e:
-            print(f"Error adding memory to Pinecone: {e}")
+            memory_log_config.log_error(f"Error adding memory to Pinecone: {e}")
             return False
 
     async def health_check(self) -> bool:
@@ -171,7 +175,7 @@ class PineconeVectorStore(VectorStore):
             return result
 
         except Exception as e:
-            print(f"Pinecone health check failed: {e}")
+            memory_log_config.log_error(f"Pinecone health check failed: {e}")
             return False
 
     async def create(self, entry: MemoryEntry) -> str:
@@ -340,12 +344,12 @@ class PineconeVectorStore(VectorStore):
         """Clean shutdown of Pinecone store"""
         if self.executor:
             self.executor.shutdown(wait=True)
-            print("✅ Pinecone store executor shutdown")
+            memory_log_config.log_success("Pinecone store executor shutdown")
 
         # Clear references
         self.index = None
         self.pc = None
-        print("✅ Pinecone store closed")
+        memory_log_config.log_success("Pinecone store closed")
 
     async def batch_insert(self, entries: List[MemoryEntry]) -> List[str]:
         """Batch insert memory entries with embeddings"""
@@ -490,4 +494,4 @@ class PineconeVectorStore(VectorStore):
         if self.executor:
             self.executor.shutdown(wait=True)
         # Pinecone client doesn't need explicit closing
-        logger.info("✅ Pinecone store closed")
+        memory_log_config.log_success("Pinecone store closed")

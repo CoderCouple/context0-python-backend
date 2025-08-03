@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional
 
 from neo4j import AsyncGraphDatabase, GraphDatabase
 
+from app.memory.config.logging_config import memory_log_config
 from app.memory.models.memory_entry import GraphLink, MemoryEntry
 from app.memory.stores.base_store import GraphStore
 
@@ -203,7 +204,7 @@ class Neo4jGraphStore(GraphStore):
                 return True
 
         except Exception as e:
-            print(f"Error adding memory to Neo4j: {e}")
+            memory_log_config.log_error(f"Error adding memory to Neo4j: {e}")
             return False
 
     async def health_check(self) -> bool:
@@ -219,7 +220,7 @@ class Neo4jGraphStore(GraphStore):
                 return record is not None
 
         except Exception as e:
-            print(f"Neo4j health check failed: {e}")
+            memory_log_config.log_error(f"Neo4j health check failed: {e}")
             return False
 
     async def _create_relationship(self, session, memory_id: str, link: GraphLink):
@@ -332,7 +333,7 @@ class Neo4jGraphStore(GraphStore):
         """Clean shutdown of Neo4j store"""
         if self.driver:
             await self.driver.close()
-            print("✅ Neo4j store closed")
+            memory_log_config.log_success("Neo4j store closed")
 
     async def search(self, query: Dict[str, Any], limit: int = 10) -> List[MemoryEntry]:
         """Search memories using Cypher query conditions"""
@@ -577,7 +578,7 @@ class Neo4jGraphStore(GraphStore):
                 record = await result.single()
                 return record["total"] if record else 0
         except Exception as e:
-            print(f"Error counting nodes: {e}")
+            memory_log_config.log_error(f"Error counting nodes: {e}")
             return 0
 
     async def close(self):

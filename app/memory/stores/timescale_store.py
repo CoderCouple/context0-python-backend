@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional
 
 import asyncpg
 
+from app.memory.config.logging_config import memory_log_config
 from app.memory.models.memory_entry import MemoryEntry
 from app.memory.stores.base_store import TimeSeriesStore
 
@@ -232,7 +233,7 @@ class TimescaleTimeSeriesStore(TimeSeriesStore):
         """Clean shutdown of TimescaleDB store"""
         if self.pool:
             await self.pool.close()
-            print("✅ TimescaleDB store closed")
+            memory_log_config.log_success("TimescaleDB store closed")
 
     async def create(self, entry: MemoryEntry) -> str:
         """Create a new memory entry in the time series"""
@@ -366,7 +367,7 @@ class TimescaleTimeSeriesStore(TimeSeriesStore):
             return True
 
         except Exception as e:
-            print(f"Error adding memory to TimescaleDB: {e}")
+            memory_log_config.log_error(f"Error adding memory to TimescaleDB: {e}")
             return False
 
     async def _extract_enhanced_temporal_data(
@@ -465,7 +466,7 @@ class TimescaleTimeSeriesStore(TimeSeriesStore):
                 return result == 1
 
         except Exception as e:
-            print(f"TimescaleDB health check failed: {e}")
+            memory_log_config.log_error(f"TimescaleDB health check failed: {e}")
             return False
 
     async def read(self, memory_id: str) -> Optional[MemoryEntry]:
@@ -722,7 +723,7 @@ class TimescaleTimeSeriesStore(TimeSeriesStore):
                 result = await conn.fetchval(f"SELECT COUNT(*) FROM {self.table_name}")
                 return result if result else 0
         except Exception as e:
-            print(f"Error counting events: {e}")
+            memory_log_config.log_error(f"Error counting events: {e}")
             return 0
 
     async def close(self):

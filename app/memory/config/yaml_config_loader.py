@@ -6,13 +6,26 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 import yaml
+from app.memory.config.logging_config import memory_log_config
 
 # Load environment variables from .env file if available
 try:
     from dotenv import load_dotenv
 
-    # Load .env file from project root
-    env_path = Path(__file__).resolve().parent.parent.parent.parent / ".env"
+    # Load environment file based on APP_ENV
+    root_path = Path(__file__).resolve().parent.parent.parent.parent
+    app_env = os.getenv("APP_ENV", "development")
+
+    # Use .env.dev for development, .env.prod for production
+    if app_env == "production":
+        env_path = root_path / ".env.prod"
+    else:
+        env_path = root_path / ".env.dev"
+
+    # Fallback to .env if specific file doesn't exist
+    if not env_path.exists():
+        env_path = root_path / ".env"
+
     if env_path.exists():
         load_dotenv(env_path)
 except ImportError:
@@ -44,7 +57,7 @@ class YAMLConfigLoader:
         if not self.config_path.exists():
             raise FileNotFoundError(f"Configuration file not found: {self.config_path}")
 
-        print(f"🔧 Loading configuration from: {self.config_path}")
+        memory_log_config.log_config(f"Loading configuration from: {self.config_path}")
 
         with open(self.config_path, "r") as file:
             raw_content = file.read()

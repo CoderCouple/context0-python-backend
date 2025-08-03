@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from starlette.middleware.cors import CORSMiddleware
 
 from app.api.router import router as api_router
@@ -36,6 +37,25 @@ if settings.auth_disabled:
 async def lifespan(app: FastAPI):
     """Application lifespan manager"""
     # Startup
+    logger.info("Starting application...")
+
+    # Initialize MongoDB connection
+    from app.db.mongodb import (
+        connect_to_mongodb,
+        close_mongodb_connection,
+        get_database,
+    )
+
+    await connect_to_mongodb()
+
+    # Create indexes for performance
+    from app.db.indexes import create_indexes
+
+    db = await get_database()
+    await create_indexes(db)
+    logger.info("MongoDB indexes created")
+
+    # Initialize Memory System
     logger.info("Initializing Memory System...")
     from app.memory.config.context_zero_config import ContextZeroConfig
     from app.memory.engine.memory_engine import MemoryEngine
@@ -53,10 +73,16 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
-    logger.info("Shutting down Memory System...")
+    logger.info("Shutting down application...")
+
+    # Close MongoDB connection
+    await close_mongodb_connection()
+
+    # Shutdown Memory System
     if hasattr(app.state, "memory_engine"):
         await app.state.memory_engine.close()
-    logger.info("Memory System shutdown complete")
+
+    logger.info("Application shutdown complete")
 
 
 # Create FastAPI app
@@ -65,7 +91,91 @@ app = FastAPI(
     description="High-performance memory management system with multi-store architecture",
     version="1.0.0",
     lifespan=lifespan,
+    swagger_ui_parameters={"persistAuthorization": True},
 )
+
+# Configure security scheme for Swagger UI
+security = HTTPBearer()
+
+# Add security scheme to OpenAPI schema
+from fastapi.openapi.utils import get_openapi
+
+
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+
+    openapi_schema = get_openapi(
+        title="ContextZero Memory System",
+        version="1.0.0",
+        description="High-performance memory management system with multi-store architecture",
+        routes=app.routes,
+    )
+
+    # Add servers for base URL selection
+    # Default server based on environment
+    default_servers = []
+
+    if settings.app_env == "production":
+        default_servers.append(
+            {
+                "url": "https://api.context0.com",
+                "description": "Production server (default)",
+            }
+        )
+    else:
+        default_servers.append(
+            {
+                "url": "http://localhost:8000",
+                "description": "Local development server (default)",
+            }
+        )
+
+    # Additional server options
+    additional_servers = [
+        {"url": "http://localhost:8000", "description": "Local development server"},
+        {
+            "url": "http://127.0.0.1:8000",
+            "description": "Local development server (IP)",
+        },
+        {"url": "https://api.context0.com", "description": "Production server"},
+        {"url": "https://staging-api.context0.com", "description": "Staging server"},
+        {
+            "url": "{customUrl}",
+            "description": "Custom server URL",
+            "variables": {
+                "customUrl": {
+                    "default": "http://localhost:8000",
+                    "description": "Enter your custom API URL",
+                }
+            },
+        },
+    ]
+
+    # Combine servers, avoiding duplicates
+    openapi_schema["servers"] = default_servers
+    for server in additional_servers:
+        if server["url"] not in [s["url"] for s in openapi_schema["servers"]]:
+            openapi_schema["servers"].append(server)
+
+    # Add security scheme
+    openapi_schema["components"]["securitySchemes"] = {
+        "BearerAuth": {
+            "type": "http",
+            "scheme": "bearer",
+            "bearerFormat": "JWT",
+            "description": "Enter your Clerk JWT token",
+        }
+    }
+
+    # Apply security globally
+    openapi_schema["security"] = [{"BearerAuth": []}]
+
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+
+app.openapi = custom_openapi
 
 # Add middleware
 # Enable CORS
@@ -73,7 +183,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
     # TODO: Replace "*" with your frontend domain like
-    #  ["http://localhost:3000", "https://yourfrontend.com"]
+    #  ["http://localhost:3000"]
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -85,6 +195,11 @@ app.include_router(api_router)
 
 # Add Middleware
 app.add_middleware(AuthLoggingMiddleware)
+
+# Add Performance Monitoring Middleware
+from app.common.monitoring.performance import PerformanceMiddleware
+
+app.add_middleware(PerformanceMiddleware)
 
 # Register error handlers
 register_error_handlers(app)

@@ -1,9 +1,11 @@
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel, Field, validator
 
 from app.common.enum.memory import MemoryType
+from app.common.enum.memory_category import MemoryCategory
+from app.common.enum.memory_emotion import MemoryEmotion, EmotionIntensity
 
 
 # Request Models
@@ -23,6 +25,15 @@ class MemoryRecordInput(BaseModel):
     tags: List[str] = Field(
         default_factory=list, max_items=20, description="Tags for categorization"
     )
+    category: Optional[Union[MemoryCategory, str]] = Field(
+        None, description="Primary memory category"
+    )
+    emotion: Optional[Union[MemoryEmotion, str]] = Field(
+        None, description="Primary emotional context of the memory"
+    )
+    emotion_intensity: Optional[Union[EmotionIntensity, str]] = Field(
+        None, description="Intensity of the emotion"
+    )
     metadata: Dict[str, Any] = Field(
         default_factory=dict, description="Additional metadata"
     )
@@ -38,6 +49,42 @@ class MemoryRecordInput(BaseModel):
             raise ValueError("Text cannot be empty")
         return v.strip()
 
+    @validator("category", pre=True)
+    def validate_category(cls, v):
+        if v is None:
+            return None
+        if isinstance(v, str):
+            try:
+                return MemoryCategory(v.lower())
+            except ValueError:
+                # If not a valid enum value, return None or a default
+                return None
+        return v
+
+    @validator("emotion", pre=True)
+    def validate_emotion(cls, v):
+        if v is None:
+            return None
+        if isinstance(v, str):
+            try:
+                return MemoryEmotion(v.lower())
+            except ValueError:
+                # If not a valid enum value, return None
+                return None
+        return v
+
+    @validator("emotion_intensity", pre=True)
+    def validate_emotion_intensity(cls, v):
+        if v is None:
+            return None
+        if isinstance(v, str):
+            try:
+                return EmotionIntensity(v.lower())
+            except ValueError:
+                # If not a valid enum value, return None
+                return None
+        return v
+
 
 class SearchQuery(BaseModel):
     """Query model for searching memories"""
@@ -50,6 +97,12 @@ class SearchQuery(BaseModel):
         None, description="Filter by memory types"
     )
     tags: Optional[List[str]] = Field(None, description="Filter by tags")
+    category: Optional[MemoryCategory] = Field(
+        None, description="Filter by primary category"
+    )
+    emotion: Optional[MemoryEmotion] = Field(
+        None, description="Filter by primary emotion"
+    )
     limit: int = Field(default=10, ge=1, le=100, description="Maximum results")
     threshold: float = Field(
         default=0.7, ge=0.0, le=1.0, description="Similarity threshold"

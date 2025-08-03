@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
+from app.memory.config.logging_config import memory_log_config
 from app.api.v1.request.memory_request import MemoryRecordInput, SearchQuery
 from app.api.v1.response.memory_response import (
     MemoryResponse,
@@ -69,7 +70,9 @@ class MemoryEngine:
         if self._initialized:
             return
 
-        print("Initializing Memory Engine...")
+        # Setup memory logging configuration
+        memory_log_config.setup()
+        memory_log_config.log_info("Initializing Memory Engine...")
 
         # Load configuration from YAML files
         from app.memory.config.yaml_config_loader import get_config_loader
@@ -79,62 +82,62 @@ class MemoryEngine:
         try:
             # Initialize Vector Store (Pinecone)
             vector_config = config_loader.get_vector_store_config()
-            print(f"📊 Vector Store Config: {vector_config}")
+            memory_log_config.log_config("Vector Store Config", vector_config)
             if vector_config.get("provider") == "pinecone":
                 await self._initialize_pinecone(vector_config)
 
             # Initialize Graph Store (Neo4j)
             graph_config = config_loader.get_graph_store_config()
-            print(f"📊 Graph Store Config: {graph_config}")
+            memory_log_config.log_config("Graph Store Config", graph_config)
             if graph_config.get("provider") == "neo4j":
                 await self._initialize_neo4j(graph_config)
 
             # Initialize Document Store (MongoDB)
             doc_config = config_loader.get_doc_store_config()
-            print(f"📊 Document Store Config: {doc_config}")
+            memory_log_config.log_config("Document Store Config", doc_config)
             if doc_config.get("provider") == "mongodb":
                 await self._initialize_mongodb(doc_config)
 
             # Initialize Time Series Store (TimescaleDB)
             try:
                 time_config = config_loader.get_time_store_config()
-                print(f"📊 Time Series Store Config: {time_config}")
+                memory_log_config.log_config("Time Series Store Config", time_config)
                 if time_config and time_config.get("provider") == "timescaledb":
                     await self._initialize_timescaledb(time_config)
             except Exception as e:
-                print(f"⚠️ TimescaleDB not configured: {e}")
+                memory_log_config.log_warning(f"TimescaleDB not configured: {e}")
                 self.timeseries_store = None
 
             # Initialize Audit Store (MongoDB)
             audit_config = config_loader.get_audit_store_config()
-            print(f"📊 Audit Store Config: {audit_config}")
+            memory_log_config.log_config("Audit Store Config", audit_config)
             if audit_config.get("provider") == "mongodb":
                 await self._initialize_audit_store(audit_config)
 
             # Print LLM and Embedder configs
             try:
                 llm_config = config_loader.get_llm_config()
-                print(f"📊 LLM Config: {llm_config}")
+                memory_log_config.log_config("LLM Config", llm_config)
             except Exception as e:
-                print(f"⚠️ LLM config error: {e}")
+                memory_log_config.log_warning(f"LLM config error: {e}")
 
             try:
                 embedder_config = config_loader.get_embedder_config()
-                print(f"📊 Embedder Config: {embedder_config}")
+                memory_log_config.log_config("Embedder Config", embedder_config)
             except Exception as e:
-                print(f"⚠️ Embedder config error: {e}")
+                memory_log_config.log_warning(f"Embedder config error: {e}")
 
             try:
                 system_config = config_loader.get_system_config()
-                print(f"📊 System Config: {system_config}")
+                memory_log_config.log_config("System Config", system_config)
             except Exception as e:
-                print(f"⚠️ System config error: {e}")
+                memory_log_config.log_warning(f"System config error: {e}")
 
             self._initialized = True
-            print("Memory Engine initialized successfully")
+            memory_log_config.log_success("Memory Engine initialized successfully")
 
         except Exception as e:
-            print(f"❌ Error initializing Memory Engine: {e}")
+            memory_log_config.log_error(f"Error initializing Memory Engine: {e}")
             import traceback
 
             traceback.print_exc()
@@ -153,12 +156,9 @@ class MemoryEngine:
                 index_name=store_config.get("index_name", "memory-index"),
             )
             await self.vector_store.initialize()
-            print("✅ Pinecone vector store initialized")
+            memory_log_config.log_success("Pinecone vector store initialized")
         except Exception as e:
-            print(f"❌ Failed to initialize Pinecone: {e}")
-            print(
-                "   Continuing without vector store - will use document store fallback"
-            )
+            memory_log_config.log_error(f"Failed to initialize Pinecone: {e}")
             self.vector_store = None
 
     async def _initialize_neo4j(self, config: dict):
@@ -175,9 +175,9 @@ class MemoryEngine:
                 database=store_config.get("database", "neo4j"),
             )
             await self.graph_store.initialize()
-            print("✅ Neo4j graph store initialized")
+            memory_log_config.log_success("Neo4j graph store initialized")
         except Exception as e:
-            print(f"❌ Failed to initialize Neo4j: {e}")
+            memory_log_config.log_error(f"Failed to initialize Neo4j: {e}")
 
     async def _initialize_mongodb(self, config: dict):
         """Initialize MongoDB document store"""
@@ -192,9 +192,11 @@ class MemoryEngine:
                 collection_name=store_config.get("collection_name", "memories"),
             )
             await self.doc_store.initialize()
-            print("✅ MongoDB document store initialized")
+            memory_log_config.log_success("MongoDB document store initialized")
         except Exception as e:
-            print(f"❌ Failed to initialize MongoDB document store: {e}")
+            memory_log_config.log_error(
+                f"Failed to initialize MongoDB document store: {e}"
+            )
 
     async def _initialize_timescaledb(self, config: dict):
         """Initialize TimescaleDB time series store"""
@@ -208,9 +210,9 @@ class MemoryEngine:
                 table_name=store_config.get("table_name", "memory_timeseries"),
             )
             await self.timeseries_store.initialize()
-            print("✅ TimescaleDB time series store initialized")
+            memory_log_config.log_success("TimescaleDB time series store initialized")
         except Exception as e:
-            print(f"❌ Failed to initialize TimescaleDB: {e}")
+            memory_log_config.log_error(f"Failed to initialize TimescaleDB: {e}")
 
     async def _initialize_audit_store(self, config: dict):
         """Initialize MongoDB audit store"""
@@ -225,9 +227,11 @@ class MemoryEngine:
                 collection_name=store_config.get("collection_name", "audit_log"),
             )
             await self.audit_store.initialize()
-            print("✅ MongoDB audit store initialized")
+            memory_log_config.log_success("MongoDB audit store initialized")
         except Exception as e:
-            print(f"❌ Failed to initialize MongoDB audit store: {e}")
+            memory_log_config.log_error(
+                f"Failed to initialize MongoDB audit store: {e}"
+            )
 
     # ==========================================
     # CORE MEMORY OPERATIONS
@@ -241,14 +245,44 @@ class MemoryEngine:
         start_time = time.time()
 
         try:
+            # Add category and emotion as tags if present
+            tags = record_input.tags.copy()
+
+            # Add primary category as a special tag
+            if record_input.category:
+                tags.append(f"primary_category:{record_input.category.value}")
+                # Also add the category itself as a regular tag
+                tags.append(record_input.category.value)
+
+            # Add primary emotion as a special tag
+            if record_input.emotion:
+                tags.append(f"primary_emotion:{record_input.emotion.value}")
+                # Also add the emotion itself as a regular tag
+                tags.append(record_input.emotion.value)
+
+                # Add emotion intensity if present
+                if record_input.emotion_intensity:
+                    tags.append(
+                        f"emotion_intensity:{record_input.emotion_intensity.value}"
+                    )
+
+            # Store category and emotion in metadata for future reference
+            metadata = record_input.metadata.copy()
+            if record_input.category:
+                metadata["category"] = record_input.category.value
+            if record_input.emotion:
+                metadata["emotion"] = record_input.emotion.value
+                if record_input.emotion_intensity:
+                    metadata["emotion_intensity"] = record_input.emotion_intensity.value
+
             # Convert input to MemoryRecord
             record = MemoryRecord(
                 user_id=record_input.user_id,
                 session_id=record_input.session_id,
                 raw_text=record_input.text,
                 memory_type=record_input.memory_type,
-                tags=record_input.tags,
-                metadata=record_input.metadata,
+                tags=tags,
+                metadata=metadata,
                 scope=record_input.scope or "default",
             )
 
@@ -325,6 +359,33 @@ class MemoryEngine:
                     if query.tags:
                         search_filter["tags"] = {"$in": query.tags}
 
+                    # Add category and emotion filters for primary values
+                    if hasattr(query, "category") and query.category:
+                        category_tag = f"primary_category:{query.category.value}"
+                        if "tags" in search_filter:
+                            if (
+                                isinstance(search_filter["tags"], dict)
+                                and "$in" in search_filter["tags"]
+                            ):
+                                search_filter["tags"]["$in"].append(category_tag)
+                            else:
+                                search_filter["tags"] = {"$in": [category_tag]}
+                        else:
+                            search_filter["tags"] = {"$in": [category_tag]}
+
+                    if hasattr(query, "emotion") and query.emotion:
+                        emotion_tag = f"primary_emotion:{query.emotion.value}"
+                        if "tags" in search_filter:
+                            if (
+                                isinstance(search_filter["tags"], dict)
+                                and "$in" in search_filter["tags"]
+                            ):
+                                search_filter["tags"]["$in"].append(emotion_tag)
+                            else:
+                                search_filter["tags"] = {"$in": [emotion_tag]}
+                        else:
+                            search_filter["tags"] = {"$in": [emotion_tag]}
+
                     vector_results = await self.vector_store.similarity_search(
                         embedding=query_embedding,
                         limit=query.limit,
@@ -392,6 +453,30 @@ class MemoryEngine:
                                     else:
                                         confidence = confidence_data
 
+                                    # Extract category and emotion from metadata
+                                    category = None
+                                    emotion = None
+                                    if "category" in metadata:
+                                        try:
+                                            from app.common.enum.memory_category import (
+                                                MemoryCategory,
+                                            )
+
+                                            category = MemoryCategory(
+                                                metadata["category"]
+                                            )
+                                        except:
+                                            pass
+                                    if "emotion" in metadata:
+                                        try:
+                                            from app.common.enum.memory_emotion import (
+                                                MemoryEmotion,
+                                            )
+
+                                            emotion = MemoryEmotion(metadata["emotion"])
+                                        except:
+                                            pass
+
                                     search_result = SearchResult(
                                         id=memory_entry["id"],
                                         content=metadata.get("input")
@@ -404,9 +489,41 @@ class MemoryEngine:
                                         tags=tags,
                                         created_at=created_at,
                                         scope=metadata.get("scope"),
+                                        category=category,
+                                        emotion=emotion,
                                     )
                                 else:
                                     # MemoryEntry object format
+                                    # Extract category and emotion from metadata or tags
+                                    category = None
+                                    emotion = None
+                                    if (
+                                        hasattr(memory_entry, "metadata")
+                                        and memory_entry.metadata
+                                    ):
+                                        if "category" in memory_entry.metadata:
+                                            try:
+                                                from app.common.enum.memory_category import (
+                                                    MemoryCategory,
+                                                )
+
+                                                category = MemoryCategory(
+                                                    memory_entry.metadata["category"]
+                                                )
+                                            except:
+                                                pass
+                                        if "emotion" in memory_entry.metadata:
+                                            try:
+                                                from app.common.enum.memory_emotion import (
+                                                    MemoryEmotion,
+                                                )
+
+                                                emotion = MemoryEmotion(
+                                                    memory_entry.metadata["emotion"]
+                                                )
+                                            except:
+                                                pass
+
                                     search_result = SearchResult(
                                         id=memory_entry.id,
                                         content=memory_entry.input
@@ -421,6 +538,8 @@ class MemoryEngine:
                                         tags=memory_entry.tags,
                                         created_at=memory_entry.created_at,
                                         scope=memory_entry.scope,
+                                        category=category,
+                                        emotion=emotion,
                                     )
                                 results.append(search_result)
                             except Exception as e:
@@ -576,11 +695,17 @@ class MemoryEngine:
                 if self.audit_store:
                     available_stores.append("audit")
 
-                print(f"⚠️  Warning: All stores failed for memory {memory_entry.id}")
-                print(f"   Available stores: {available_stores}")
-                print(f"   Continuing anyway to prevent blocking...")
+                memory_log_config.log_warning(
+                    f"All stores failed for memory {memory_entry.id}"
+                )
+                memory_log_config.log_warning(f"Available stores: {available_stores}")
+                memory_log_config.log_warning(
+                    "Continuing anyway to prevent blocking..."
+                )
             else:
-                print(f"✅ Memory stored in {successes}/{len(tasks)} stores")
+                memory_log_config.log_success(
+                    f"Memory stored in {successes}/{len(tasks)} stores"
+                )
 
     # ==========================================
     # UTILITY METHODS
@@ -696,7 +821,7 @@ class MemoryEngine:
     async def close(self):
         """Clean shutdown of memory eng
         ine and all stores"""
-        print("Closing Memory Engine...")
+        memory_log_config.log_info("Closing Memory Engine...")
 
         # Close all stores
         stores = [
@@ -712,18 +837,24 @@ class MemoryEngine:
                 try:
                     if hasattr(store, "close"):
                         await store.close()
-                        print(f"✅ {store_name} closed successfully")
+                        memory_log_config.log_success(
+                            f"{store_name} closed successfully"
+                        )
                     elif hasattr(store, "disconnect"):
                         await store.disconnect()
-                        print(f"✅ {store_name} disconnected successfully")
+                        memory_log_config.log_success(
+                            f"{store_name} disconnected successfully"
+                        )
                     else:
-                        print(f"ℹ️ {store_name} has no close/disconnect method")
+                        memory_log_config.log_info(
+                            f"{store_name} has no close/disconnect method"
+                        )
                 except Exception as e:
-                    print(f"⚠️ Error closing {store_name}: {e}")
+                    memory_log_config.log_warning(f"Error closing {store_name}: {e}")
 
         # Close thread pool executor if it exists
         if hasattr(self, "executor"):
             self.executor.shutdown(wait=True)
-            print("✅ Thread pool executor shutdown")
+            memory_log_config.log_success("Thread pool executor shutdown")
 
-        print("Memory Engine closed successfully")
+        memory_log_config.log_success("Memory Engine closed successfully")

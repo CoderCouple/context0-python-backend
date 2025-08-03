@@ -48,10 +48,14 @@ async def get_memory_service() -> MemoryService:
 async def create_memory(
     record: MemoryRecordInput,
     background_tasks: BackgroundTasks,
+    context: UserContext = Depends(get_current_user_context),
     memory_service: MemoryService = Depends(get_memory_service),
 ):
     """Create a new memory with enhanced processing"""
     try:
+        # Override user_id with the authenticated user's ID
+        record.user_id = context.user_id
+
         response = await memory_service.create_memory(record)
 
         # Add background audit logging
@@ -60,7 +64,7 @@ async def create_memory(
                 log_memory_operation,
                 "create",
                 response.memory_id,
-                record.user_id,
+                context.user_id,
                 response.operation,
             )
 
@@ -81,12 +85,12 @@ async def create_memory(
 @router.get("/memories/{memory_id}", response_model=BaseResponse[MemoryEntry])
 async def get_memory(
     memory_id: str,
-    user_id: str = Query(..., description="User ID for access control"),
+    context: UserContext = Depends(get_current_user_context),
     memory_service: MemoryService = Depends(get_memory_service),
 ):
     """Get a specific memory by ID with access tracking"""
     try:
-        memory = await memory_service.get_memory(memory_id, user_id)
+        memory = await memory_service.get_memory(memory_id, context.user_id)
 
         if not memory:
             return error_response(message="Memory not found", status_code=404)
@@ -104,28 +108,22 @@ async def get_memory(
 
 @router.get("/memories", response_model=BaseResponse[List[MemoryEntry]])
 async def list_memories(
-    user_id: Optional[str] = Query(
-        None, description="User ID for filtering (defaults to context user)"
-    ),
     memory_type: Optional[str] = Query(None, description="Filter by memory type"),
     tags: Optional[List[str]] = Query(None, description="Filter by tags"),
     limit: int = Query(20, ge=1, le=100, description="Number of memories to return"),
     offset: int = Query(0, ge=0, description="Number of memories to skip"),
     sort_by: str = Query("created_at", description="Sort field"),
     sort_order: str = Query("desc", description="Sort order (asc/desc)"),
-    memory_service: MemoryService = Depends(get_memory_service),
     context: UserContext = Depends(get_current_user_context),
+    memory_service: MemoryService = Depends(get_memory_service),
 ):
     """List memories with filtering and pagination
 
-    If user_id is not provided, uses the authenticated user's ID from context.
+    Uses the authenticated user's ID from context.
     """
     try:
-        # Use provided user_id or fall back to context user_id
-        actual_user_id = user_id or context.user_id
-
         memories = await memory_service.list_memories(
-            user_id=actual_user_id,
+            user_id=context.user_id,
             memory_type=memory_type,
             tags=tags,
             limit=limit,
@@ -149,10 +147,15 @@ async def list_memories(
 
 @router.post("/memories/search", response_model=BaseResponse[SearchResponse])
 async def search_memories(
-    query: SearchQuery, memory_service: MemoryService = Depends(get_memory_service)
+    query: SearchQuery,
+    context: UserContext = Depends(get_current_user_context),
+    memory_service: MemoryService = Depends(get_memory_service),
 ):
     """Advanced semantic search for memories with filtering"""
     try:
+        # Override user_id with authenticated user's ID
+        query.user_id = context.user_id
+
         response = await memory_service.search_memories(query)
 
         if response.success:
@@ -177,22 +180,16 @@ async def update_memory(
     memory_id: str,
     update: MemoryUpdate,
     background_tasks: BackgroundTasks,
+    context: UserContext = Depends(get_current_user_context),
     memory_service: MemoryService = Depends(get_memory_service),
 ):
     """Update an existing memory with validation"""
     try:
-        # Extract user_id from the update or require it as query param
-        user_id = update.metadata.get("user_id") if update.metadata else None
-        if not user_id:
-            return error_response(
-                message="User ID required for memory update", status_code=400
-            )
-
-        result = await memory_service.update_memory(memory_id, update, user_id)
+        result = await memory_service.update_memory(memory_id, update, context.user_id)
 
         if result.get("success"):
             background_tasks.add_task(
-                log_memory_operation, "update", memory_id, user_id, "UPDATE"
+                log_memory_operation, "update", memory_id, context.user_id, "UPDATE"
             )
 
             return success_response(
@@ -221,16 +218,16 @@ async def update_memory(
 async def delete_memory(
     memory_id: str,
     background_tasks: BackgroundTasks,
-    user_id: str = Query(..., description="User ID for authorization"),
+    context: UserContext = Depends(get_current_user_context),
     memory_service: MemoryService = Depends(get_memory_service),
 ):
     """Soft delete a memory with audit trail"""
     try:
-        result = await memory_service.delete_memory(memory_id, user_id)
+        result = await memory_service.delete_memory(memory_id, context.user_id)
 
         if result.get("success"):
             background_tasks.add_task(
-                log_memory_operation, "delete", memory_id, user_id, "DELETE"
+                log_memory_operation, "delete", memory_id, context.user_id, "DELETE"
             )
 
             return success_response(
@@ -259,6 +256,7 @@ async def delete_memory(
 async def bulk_create_memories(
     records: List[MemoryRecordInput],
     background_tasks: BackgroundTasks,
+    context: UserContext = Depends(get_current_user_context),
     memory_service: MemoryService = Depends(get_memory_service),
 ):
     """Bulk create multiple memories with batch processing"""
@@ -268,6 +266,10 @@ async def bulk_create_memories(
                 message="Bulk operations limited to 50 memories per request",
                 status_code=400,
             )
+
+        # Override user_id in all records with authenticated user's ID
+        for record in records:
+            record.user_id = context.user_id
 
         response = await memory_service.bulk_create_memories(records)
 
@@ -279,7 +281,7 @@ async def bulk_create_memories(
                         log_memory_operation,
                         "bulk_create",
                         result.get("memory_id", ""),
-                        result.get("user_id", ""),
+                        context.user_id,
                         "BULK_CREATE",
                     )
 
@@ -300,14 +302,16 @@ async def bulk_create_memories(
 
 @router.post("/memories/time-travel", response_model=BaseResponse[TimelineResponse])
 async def time_travel_query(
-    user_id: str = Query(..., description="User ID"),
     target_time: datetime = Query(..., description="Target timestamp"),
     query: Optional[str] = Query(None, description="Optional search query"),
+    context: UserContext = Depends(get_current_user_context),
     memory_service: MemoryService = Depends(get_memory_service),
 ):
     """Query memory state at a specific point in time"""
     try:
-        response = await memory_service.time_travel_query(user_id, target_time, query)
+        response = await memory_service.time_travel_query(
+            context.user_id, target_time, query
+        )
 
         if response.success:
             return success_response(
@@ -331,18 +335,18 @@ async def time_travel_query(
 )
 async def get_memory_evolution(
     memory_id: str,
-    user_id: str = Query(..., description="User ID for authorization"),
     start_time: Optional[datetime] = Query(
         None, description="Start time for evolution"
     ),
     end_time: Optional[datetime] = Query(None, description="End time for evolution"),
+    context: UserContext = Depends(get_current_user_context),
     memory_service: MemoryService = Depends(get_memory_service),
 ):
     """Get the evolution history of a specific memory"""
     try:
         response = await memory_service.get_memory_evolution(
             memory_id=memory_id,
-            user_id=user_id,
+            user_id=context.user_id,
             start_time=start_time,
             end_time=end_time,
         )
@@ -372,12 +376,12 @@ async def get_memory_evolution(
 
 @router.get("/stats", response_model=BaseResponse[HealthResponse])
 async def get_memory_stats(
-    user_id: Optional[str] = Query(None, description="Filter stats by user"),
+    context: UserContext = Depends(get_current_user_context),
     memory_service: MemoryService = Depends(get_memory_service),
 ):
-    """Get comprehensive memory system statistics"""
+    """Get comprehensive memory system statistics for authenticated user"""
     try:
-        stats = await memory_service.get_system_stats(user_id)
+        stats = await memory_service.get_system_stats(context.user_id)
 
         return success_response(
             result=stats, message="System statistics retrieved successfully"
